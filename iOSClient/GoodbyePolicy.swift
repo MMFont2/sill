@@ -7,13 +7,12 @@ import StreamProtocol
 /// StreamProtocol, checked on its own with swiftc.
 ///
 /// The five reasons hosts have sent since remote access keep their words and their reconnects, and
-/// so do "pairingRequired" and the Mac's "sleep" and "shutdown" (pairing at home: Require pairing turned on while this unpaired device
-/// was connected; StreamClient+Home ends such a session at home with these words; the Mac's own
-/// going to sleep or shutting down, with a reconnect). "update" (a Mac
-/// whose device floor is above this device's version, DeviceGate) and any other
-/// reason are notices: the host's own words (its `message`, cleaned), shown as the status line, and
-/// a reconnect only when the Mac asks for one (`"reconnect":true`); "update" also offers the App
-/// Store. Before this rule a reason the device did not know showed "‹Mac› disconnected…" and
+/// so does "pairingRequired" (pairing at home: Require pairing turned on while this unpaired device
+/// was connected; StreamClient+Home ends such a session at home with these words). "update" (a Mac
+/// whose device floor is above this device's version, DeviceGate) and any other reason are notices:
+/// the host's own words (its `message`, cleaned), shown as the status line, and a reconnect only
+/// when the Mac asks for one (`"reconnect":true`); "update" also offers the App Store. The Mac's
+/// "sleep" and "shutdown" are notices too, in this build's words and always with a reconnect. Before this rule a reason the device did not know showed "‹Mac› disconnected…" and
 /// reconnected at once, so a Mac that refused the device was dialled again and again.
 enum GoodbyePolicy {
     struct Outcome: Equatable {
@@ -36,7 +35,7 @@ enum GoodbyePolicy {
     /// The reasons whose words and reconnects are this build's own; "update" and any other reason
     /// are notices.
     static let knownReasons: Set<String> = [Goodbye.quit, Goodbye.removed, Goodbye.remoteOff, Goodbye.internetOff, Goodbye.busy,
-                                            Goodbye.pairingRequired, Goodbye.sleep, Goodbye.shutdown]
+                                            Goodbye.pairingRequired]
 
     /// A goodbye this build shows by the Mac's words: "update", or a reason it does not know (a
     /// kind 22 that did not decode reads as reason "").
@@ -57,12 +56,14 @@ enum GoodbyePolicy {
         case Goodbye.quit:
             return Outcome(text: "\(mac) quit Sill. This \(device) reconnects when it’s back.",
                            reconnect: true, remoteAllowed: saved, isNotice: false)
+        // The Mac's own going: this build's words, and notices (not in `knownReasons`), as "update"
+        // is, so they are said whatever the session's state, a remote dial's before its first list too.
         case Goodbye.sleep:
             return Outcome(text: "\(mac) went to sleep. This \(device) reconnects when it wakes.",
-                           reconnect: true, remoteAllowed: saved, isNotice: false)
+                           reconnect: true, remoteAllowed: saved, isNotice: true)
         case Goodbye.shutdown:
-            return Outcome(text: "\(mac) is shutting down or restarting. This \(device) reconnects when it’s back.",
-                           reconnect: true, remoteAllowed: saved, isNotice: false)
+            return Outcome(text: "\(mac) is shutting down, restarting or logging out. This \(device) reconnects when it’s back.",
+                           reconnect: true, remoteAllowed: saved, isNotice: true)
         case Goodbye.removed:
             return Outcome(text: "\(mac) removed this \(device). To use it again, pair it again.",
                            reconnect: false, remoteAllowed: false, isNotice: false)
