@@ -12,8 +12,9 @@ import StreamProtocol
 /// whose device floor is above this device's version, DeviceGate) and any other reason are notices:
 /// the host's own words (its `message`, cleaned), shown as the status line, and a reconnect only
 /// when the Mac asks for one (`"reconnect":true`); "update" also offers the App Store. The Mac's
-/// "sleep" and "shutdown" are notices too, in this build's words and always with a reconnect. Before this rule a reason the device did not know showed "‹Mac› disconnected…" and
-/// reconnected at once, so a Mac that refused the device was dialled again and again.
+/// "sleep" and "shutdown" are notices too, in this build's words and always with a reconnect.
+/// Before this rule a reason the device did not know showed "‹Mac› disconnected…" and reconnected
+/// at once, so a Mac that refused the device was dialled again and again.
 enum GoodbyePolicy {
     struct Outcome: Equatable {
         /// The connect screen's status line.

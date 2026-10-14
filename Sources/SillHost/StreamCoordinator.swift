@@ -1852,10 +1852,10 @@ package final class StreamCoordinator {
         stage.release()
     }
 
-    /// The Mac is about to sleep, or to shut down or restart (Sill.app, from NSWorkspace): every
-    /// connected device hears why (kind 22 "sleep" or "shutdown", the Mac's words and a reconnect, at
-    /// most 0.1 s), so its status line says so instead of a lost connection's, and it looks for the
-    /// Mac again; nothing else changes here (a shutdown's quit then finds no device to tell).
+    /// The Mac is about to sleep, or to shut down, restart or log out (Sill.app, from NSWorkspace):
+    /// every connected device hears why (kind 22 "sleep" or "shutdown", the Mac's words and a
+    /// reconnect, at most 0.1 s), so its status line says so instead of a lost connection's, and it
+    /// looks for the Mac again; nothing else changes here (a shutdown's quit then finds no device).
     package func goodbyeBeforeSleep(shuttingDown: Bool) {
         let devices = catalog.clientCount
         guard devices > 0 else { return }
