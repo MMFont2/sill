@@ -70,5 +70,19 @@ check(out(g("update", reconnect: true), saved: true).reconnect && out(g("update"
 check(out(g("update", "\u{202E}Update\nnow")).text == "Update now", "update's message cleaned too")
 check(out(g("update", " ")).storeLink && out(g("update", " ")).text.hasPrefix("Update Sill on this iPad"), "update, message empty after cleaning")
 check(!out(later).storeLink && !out(g("quit")).storeLink && !out(nil).storeLink && !out(g("")).storeLink, "only update links the App Store")
+// The Mac went to sleep, or is shutting down or restarting (roadmap, why a session ended): this
+// build's words and a reconnect, the remote door allowed for a saved Mac, as after "quit".
+check(out(Goodbye.asleep(mac: "Mac mini"), saved: true) == O(text: "Mac mini went to sleep. This iPad reconnects when it wakes.", reconnect: true, remoteAllowed: true, isNotice: false), "sleep, saved")
+check(out(Goodbye.asleep(mac: "x"), mac: "Studio", device: "iPhone").text == "Studio went to sleep. This iPhone reconnects when it wakes." && !out(Goodbye.asleep(mac: "x")).remoteAllowed, "sleep: the device's own name for the Mac, an unsaved iPhone")
+check(out(Goodbye.shuttingDown(mac: "Mac mini"), saved: true) == O(text: "Mac mini is shutting down or restarting. This iPad reconnects when it’s back.", reconnect: true, remoteAllowed: true, isNotice: false), "shutdown, saved")
+check(!GoodbyePolicy.isNotice(g("sleep")) && !GoodbyePolicy.isNotice(g("shutdown")), "sleep and shutdown are not notices")
+check(out(g("sleep", reconnect: false)).reconnect && out(g("shutdown", reconnect: false)).reconnect, "both keep this build's reconnect")
+// What a Mac sends: its own words and a reconnect, so a device from before these reasons shows them
+// and reconnects (an unknown reason is a notice that follows `reconnect`).
+let asleep = Goodbye.asleep(mac: "Mac mini"), down = Goodbye.shuttingDown(mac: "Mac mini")
+check(asleep.reason == "sleep" && asleep.reconnect == true && asleep.message == "Mac mini went to sleep. Sill reconnects when it wakes.", "the sleep goodbye's fields")
+check(down.reason == "shutdown" && down.reconnect == true && down.message == "Mac mini is shutting down or restarting. Sill reconnects when it’s back.", "the shutdown goodbye's fields")
+var older = GoodbyePolicy.knownReasons; older.remove("sleep"); older.remove("shutdown")
+check(!older.contains(asleep.reason) && GoodbyePolicy.message(asleep) == asleep.message, "an older build: a notice with the Mac's message")
 print("\(checks) checks, \(failures) failed")
 exit(failures == 0 ? 0 : 1)

@@ -37,6 +37,8 @@ import StreamProtocol
 ///                                              "SillMenuAfter <s> s: " line per line, s seconds
 ///                                              after launch (the "‹device› Wants to Pair",
 ///                                              older-device and "Devices Can’t Connect" items)
+///     -SillSleepAfter '<s> sleep|shutdown'     as if the Mac were about to sleep (or shut down)
+///                                              s seconds after launch: the goodbye it sends then
 ///     -SillQuitAfter <s>                       Quit (NSApp.terminate) s seconds after launch
 ///     -SillUpdateFeed <url>                    the update check asks this feed instead of GitHub:
 ///                                              a feed on this Mac only (http or https to
@@ -88,7 +90,7 @@ enum DebugHooks {
 
     /// The timed hooks, which Sill.app itself ignores.
     static let timedHooks = ["SillSetAfter", "SillPairAfter", "SillCancelPairingAfter", "SillUnpairAfter",
-                             "SillCableNoticeAfter", "SillMenuAfter", "SillPrintMenuAfter", "SillQuitAfter"]
+                             "SillCableNoticeAfter", "SillMenuAfter", "SillPrintMenuAfter", "SillSleepAfter", "SillQuitAfter"]
 
     /// The update check's configuration: GitHub and the plan's schedule, with the running version
     /// from the bundle, unless the test arguments above say otherwise. Read once, when the model is
@@ -164,6 +166,17 @@ enum DebugHooks {
                 let wasShown = model.closePairingWindow?() ?? false
                 if !wasShown { model.cancelPairing() }
                 print("SillCancelPairingAfter \(delay) s: \(wasShown ? "closed the pairing window" : "no pairing window on screen; cancelled")")
+            }
+        }
+        if let spec = defaults.string(forKey: "SillSleepAfter") {
+            let parts = spec.split(separator: " ")
+            if parts.count == 2, let at = Double(parts[0]), at > 0, ["sleep", "shutdown"].contains(parts[1]) {
+                after(at) {
+                    print("SillSleepAfter \(at) s: as if the Mac were about to \(parts[1] == "sleep" ? "sleep" : "shut down")")
+                    model.coordinator?.goodbyeBeforeSleep(shuttingDown: parts[1] == "shutdown")
+                }
+            } else {
+                print("SillSleepAfter: can’t read “\(spec)”; expected '<seconds> sleep' or '<seconds> shutdown'")
             }
         }
         let unpairAfter = defaults.double(forKey: "SillUnpairAfter")
