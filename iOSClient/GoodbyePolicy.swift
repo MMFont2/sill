@@ -47,10 +47,13 @@ enum GoodbyePolicy {
     /// The session ended with `goodbye` (nil: no goodbye came). `mac` is what the status line calls
     /// the Mac (its saved name, else its Bonjour name or the address dialled), `device` "iPad" or
     /// "iPhone", `saved` whether the Mac is a saved one (its remote door may be dialled).
-    static func outcome(_ goodbye: Goodbye?, mac: String, device: String, saved: Bool) -> Outcome {
+    /// `away`: the session ended because this device was away (`awayEnd`); it words an end with no
+    /// goodbye, and a goodbye's own words win.
+    static func outcome(_ goodbye: Goodbye?, mac: String, device: String, saved: Bool, away: Away? = nil) -> Outcome {
         guard let goodbye else {
-            return Outcome(text: saved ? "\(mac) disconnected. Sill will reconnect when it can reach it."
-                                       : "\(mac) disconnected. It will reconnect when the Mac is back.",
+            let what = away.map { "The connection to \(mac) ended while \(awayWords($0, device: device))." } ?? "\(mac) disconnected."
+            return Outcome(text: saved ? "\(what) Sill will reconnect when it can reach it."
+                                       : "\(what) It will reconnect when the Mac is back.",
                            reconnect: true, remoteAllowed: saved, isNotice: false)
         }
         switch goodbye.reason {
@@ -91,6 +94,53 @@ enum GoodbyePolicy {
                                 : "\(mac) closed the connection. Tap it to try again."
             return Outcome(text: message(goodbye) ?? own, reconnect: reconnect, remoteAllowed: saved, isNotice: true)
         }
+    }
+
+    /// This device let the session go: Sill was in the background, or the device locked (iOS said it
+    /// was locking the device's data), when the connection ended. The Mac drops a device that stops
+    /// reading for 4 s, so such a session ends on its own.
+    enum Away: Equatable { case background, locked }
+
+    /// One time in the background with a session up: whether the device locked meanwhile, when Sill
+    /// came back to the foreground (`returnedAt`), and whether a pong for a ping sent since then has
+    /// arrived (`heardSince`: buffered bytes from before the suspension do not count).
+    struct AwaySpell: Equatable {
+        var locked = false
+        var returnedAt: Double?
+        var heardSince = false
+    }
+
+    /// Sill entered the background while `connected`. An unconfirmed spell keeps `locked` (the
+    /// connection may already be dead from the lock); a confirmed one starts afresh.
+    static func enteredBackground(connected: Bool, current: AwaySpell?) -> AwaySpell? {
+        guard connected else { return nil }
+        if let current, !current.heardSince {
+            return AwaySpell(locked: current.locked)
+        }
+        return AwaySpell()
+    }
+
+    /// A pong arrived for a ping sent at `pingSentAt`: counts only once Sill has come back and the
+    /// ping was sent since (`returnedAt`), so bytes buffered before the suspension never clear the
+    /// spell.
+    static func heardPong(pingSentAt: Double, spell: inout AwaySpell?) {
+        if let ret = spell?.returnedAt, pingSentAt >= ret { spell?.heardSince = true }
+    }
+
+    /// The session ended with `goodbye` after `spell`: away when no goodbye said why and nothing
+    /// came from the Mac after the return.
+    static func awayEnd(goodbye: Goodbye?, spell: AwaySpell?) -> Away? {
+        guard goodbye == nil, let spell, !spell.heardSince else { return nil }
+        return spell.locked ? .locked : .background
+    }
+
+    /// The reconnect line's note after an away end (DiscoveryPolicy.reconnectLine, the remote dial's).
+    static func awayNote(_ away: Away?, device: String) -> String? {
+        away.map { "(the connection ended while \(awayWords($0, device: device)))" }
+    }
+
+    private static func awayWords(_ away: Away, device: String) -> String {
+        away == .locked ? "this \(device) was locked" : "Sill was in the background"
     }
 
     /// The host's message as the status line shows it: one line of at most `messageLimit`
