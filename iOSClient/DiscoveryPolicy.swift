@@ -749,14 +749,12 @@ enum DiscoveryPolicy {
     /// after `reconnectQuietAfter` that the Mac may be asleep, through every later dial (VoiceOver
     /// hears it once), and after `reconnectDials` that the dials stopped, in the words the remote
     /// path's end uses.
-    /// `note`: why the session ended (GoodbyePolicy.awayNote), carried while it says "Reconnecting".
-    static func reconnectLine(mac: String, failed: Int, direct: Bool, note: String? = nil) -> String {
+    static func reconnectLine(mac: String, failed: Int, direct: Bool) -> String {
         if failed >= reconnectDials { return "Stopped trying to reach \(mac). Tap it to try again." }
         if failed >= reconnectQuietAfter {
             return "\(mac) isn\u{2019}t answering. It may be asleep. Sill keeps trying, or tap it to try now."
         }
-        let line = direct ? "Reconnecting to \(mac) directly\u{2026}" : "Reconnecting to \(mac)\u{2026}"
-        return note.map { "\(line) \($0)" } ?? line
+        return direct ? "Reconnecting to \(mac) directly\u{2026}" : "Reconnecting to \(mac)\u{2026}"
     }
 
     /// What this device watched when a window list says nothing streams (`autoDesktop`).
