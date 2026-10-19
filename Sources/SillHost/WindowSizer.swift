@@ -62,7 +62,9 @@ final class WindowSizer {
             print("Window sizing: \(windows.name(p)) is full screen; not resizing.")
             return nil
         case .refused(let code):
-            print("Window sizing: AX refused the size (error \(code)).")
+            // Named, since a window is fitted by default (issue #70): a window that cannot be resized
+            // (-25200) says so once per size asked (FitPolicy.Asks), at its own size.
+            print("Window sizing: \(windows.name(p)) refused the size (AX error \(code)); it streams at its own size.")
             return nil
         case .fitted(let before, let after, let timedOut):
             if timedOut { print("Window sizing: \(windows.name(p)) did not answer the size in time; if it takes it later, it still goes back.") }

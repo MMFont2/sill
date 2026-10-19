@@ -159,6 +159,21 @@ check(DuoPosture.paneAspect(video: size(3024, 1964), fitsWindowToPane: false) ==
 check(DuoPosture.paneAspect(video: size(3024, 1964), fitsWindowToPane: true) == 1.6, "a window the Mac fits to the pane: 16:10")
 check(DuoPosture.paneAspect(video: size(1920, 0), fitsWindowToPane: false) == 1.6 && DuoPosture.paneAspect(video: size(0, 1080), fitsWindowToPane: false) == 1.6,
       "half a size is none")
+// Whether the Mac fits the window to the pane (issue #70): Aa set, the virtual display, or the Mac's own
+// word with Aa unset (kind 16's `stream.fitsPanel`); never the Desktop; a Mac before it says nothing.
+for (window, scale, vd, mac, want, what) in [
+    (true, nil as Double?, false, nil as Bool?, false, "a window, Aa unset, a Mac before #70: the picture's shape"),
+    (true, nil, false, false, false, "a window the Mac leaves alone (its Fit windows off): the picture's shape"),
+    (true, nil, false, true, true, "a window the Mac fits by default (Aa unset): 16:10"),
+    (true, 1.5, false, nil, true, "a window with Aa set, a Mac before #70: 16:10, as before"),
+    (true, 1.0, false, false, true, "a window with Aa set, whatever the Mac says"),
+    (true, nil, true, nil, true, "a window on the virtual display"),
+    (true, nil, true, false, true, "a window on the virtual display, whatever else the Mac says"),
+    (false, nil, false, true, false, "the Desktop: never, whatever the Mac says"),
+    (false, 1.25, true, true, false, "the Desktop: never, Aa set and all"),
+] {
+    check(DuoPosture.fitsWindowToPane(window: window, textScale: scale, onVirtualDisplay: vd, macFitsPanel: mac) == want, what)
+}
 
 // MARK: - The book pose's bar (approved (a))
 

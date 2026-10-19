@@ -22,6 +22,12 @@ MUTANTS = {
         "    enum CodingKeys: String, CodingKey { case state, withheldPerSecond, bitrate, carriedKbps = \"carried\", suggestedBitrate, suggestedCaptureScale }\n    /// What the link carried in the seconds it was the limit, kilobits per second; nil until three\n")],
     "W9 thisConnectionAway under another name on the wire": [("    /// The Mac counts this connection as away: its Quality and Resolution picks set the away\n",
         "    enum CodingKeys: String, CodingKey { case homeBitrate, homeCaptureScale, awayBitrate, awayCaptureScale, thisConnectionAway = \"away\", awayRunning }\n    /// The Mac counts this connection as away: its Quality and Resolution picks set the away\n")],
+    "W10 fitsPanel under another name on the wire": [("    /// The Mac sizes the streamed window to the device's panel (issue #70; FitPolicy.fitsPanel on the\n",
+        "    enum CodingKeys: String, CodingKey { case width, height, fps, mbps, onVirtualDisplay, fitsPanel = \"fits\" }\n    /// The Mac sizes the streamed window to the device's panel (issue #70; FitPolicy.fitsPanel on the\n")],
+    "W11 fitsPanel never set by the init": [("        self.fitsPanel = fitsPanel\n", "        self.fitsPanel = nil\n")],
+    "W12 fitsPanel required": [("    public var fitsPanel: Bool?\n", "    public var fitsPanel: Bool\n"),
+                               ("onVirtualDisplay: Bool, fitsPanel: Bool? = nil) {", "onVirtualDisplay: Bool, fitsPanel: Bool? = nil) {\n        let fitsPanel = fitsPanel ?? false"),
+                               ("        self.fitsPanel = fitsPanel\n", "        self.fitsPanel = fitsPanel\n")],
 }
 caught = 0
 for name, edits in MUTANTS.items():

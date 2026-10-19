@@ -131,6 +131,40 @@ do {
     check(decode(BaseState.self, brokenJSON) != nil, "…while an older device still reads it")
 }
 
+// MARK: RunningStream's fitsPanel (issue #70; docs/fit-by-default-plan.md)
+
+/// RunningStream as main had it at d1fa97e (before fitsPanel): what every older device decodes.
+struct BaseRunningStream: Codable, Hashable, Sendable {
+    var width: Int
+    var height: Int
+    var fps: Int
+    var mbps: Int
+    var onVirtualDisplay: Bool
+}
+
+do {
+    let old = ["width", "height", "fps", "mbps", "onVirtualDisplay"] as Set<String>
+    check(stream.fitsPanel == nil, "RunningStream's fitsPanel is nil unless given")
+    check(keys(encode(stream)) == old, "a stream without fitsPanel encodes exactly an older host's keys: \(keys(encode(stream)).sorted())")
+    let fitted = RunningStream(width: 2000, height: 1420, fps: 60, mbps: 15, onVirtualDisplay: false, fitsPanel: true)
+    let d = encode(fitted)
+    check(keys(d) == old.union(["fitsPanel"]) && object(d)["fitsPanel"] as? Bool == true, "fitsPanel goes out under its name: \(keys(d).sorted())")
+    check(decode(RunningStream.self, d) == fitted, "a fitted stream round-trips")
+    let left = RunningStream(width: 2000, height: 1420, fps: 60, mbps: 15, onVirtualDisplay: false, fitsPanel: false)
+    check(object(encode(left))["fitsPanel"] as? Bool == false && decode(RunningStream.self, encode(left))?.fitsPanel == false,
+          "fitsPanel false goes out as false (a window the Mac leaves alone), not left out")
+    let older = decode(RunningStream.self, json(#"{"width":1512,"height":982,"fps":60,"mbps":4,"onVirtualDisplay":false}"#))
+    check(older != nil && older?.fitsPanel == nil && older?.width == 1512, "an older host's stream decodes, with fitsPanel nil")
+    check(decode(BaseRunningStream.self, d) == BaseRunningStream(width: 2000, height: 1420, fps: 60, mbps: 15, onVirtualDisplay: false),
+          "an older device reads a fitted stream, skipping fitsPanel")
+    var state = HostSettingsState(settings: settings, persistent: true, virtualDisplayAvailable: true, virtualDisplayNote: nil,
+                                  softwareEncoder: false, stream: fitted)
+    check(decode(BaseState.self, encode(state))?.stream == fitted, "an older device's state decoder reads the fitted stream whole")
+    state.stream?.fitsPanel = nil
+    let quiet = decode(HostSettingsState.self, encode(state))
+    check(quiet?.stream != nil && quiet?.stream?.fitsPanel == nil, "a state whose stream says nothing decodes, with nil")
+}
+
 // MARK: QualityPreset's helpers
 
 do {

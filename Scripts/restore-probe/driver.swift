@@ -8,9 +8,11 @@ import ApplicationServices
 // ScreenCaptureKit as the catalog does, fits it with the real WindowSizer.resize (WindowRestore.fit
 // through Accessibility) as StreamCoordinator.fitToViewport does, into the same WindowRestore.Ledger
 // the coordinator keeps, and puts it back with the ledger's restore (WindowRestore.stop through
-// WindowSizer.AXWindows) as restoreFits does, printing each frame. Never another app's window, never
-// input, never a virtual display, never focus: the front app (`lsappinfo front`) is read before and
-// after each step and must not change.
+// WindowSizer.AXWindows) as restoreFits does, printing each frame. Since fitting by default (issue #70)
+// the steps from 15 on fit through FitPolicy, as fitToViewport now does: the viewport's panel, Aa's scale
+// and the Mac's Fit windows to the device's screen give the size, or none. Never another app's window,
+// never input, never a virtual display, never focus: the front app (`lsappinfo front`) is read before
+// and after each step and must not change.
 // usage: driver OWNER-EXECUTABLE
 
 let ownerPath = CommandLine.arguments[1]
@@ -96,6 +98,23 @@ final class Probe {
         guard let fit = sizer.resize(window: w, to: target) else { return "resize refused" }
         ledger.fitted(w.windowID, handle: fit.placement, before: fit.before, after: fit.after, asked: target)
         return "fitted from \(fmt(fit.before)) to \(fmt(fit.after)) (asked \(Int(target.width))×\(Int(target.height)))"
+    }
+
+    /// StreamCoordinator.fitToViewport since issue #70, as written: FitPolicy's fit for the panel, Aa's
+    /// scale and the setting, the 2 pt compare, the memory of a fit that left the window short (`asks`,
+    /// which a pick starts afresh), then the fit as `fit` makes it.
+    var asks = FitPolicy.Asks()
+    func fitByPolicy(_ w: SCWindow, panel: CGSize, scale: Double?, fitWindows: Bool) -> String {
+        guard let f = FitPolicy.fit(panel: panel, scale: scale, fitWindows: fitWindows) else { return "no fit (Aa unset, the setting off)" }
+        let current = WindowSizer.liveBounds(of: w.windowID)?.size ?? w.frame.size
+        guard FitPolicy.needsResize(current: current, target: f.size) else { return "already there" }
+        guard asks.shouldAsk(window: w.windowID, target: f.size, current: current) else { return "not asked again" }
+        let result = sizer.resize(window: w, to: f.size)
+        if let result { ledger.fitted(w.windowID, handle: result.placement, before: result.before, after: result.after, asked: f.size) }
+        asks.asked(window: w.windowID, target: f.size, after: result?.after.size ?? current)
+        guard let result else { return "resize refused" }
+        return "fitted from \(fmt(result.before)) to \(fmt(result.after)) (asked \(Int(f.size.width))×\(Int(f.size.height)), "
+            + (f.reason == .byDefault ? "1× by default)" : "Aa \(f.scale)×)")
     }
 
     /// StreamCoordinator.restoreFits, as written (nothing is staged here).
@@ -324,6 +343,82 @@ final class Probe {
             print("  during  \(fmt(live(w.windowID)))")
             for l in stop(keeping: nil) { print("  " + l) }; await settle()
             expect("after", live(w.windowID), S0)
+            o.end()
+        }
+
+        // Issue #70: fitting by default (FitPolicy), as fitToViewport now asks.
+        let ipadPanel = CGSize(width: 1000, height: 710)     // a 1000×710 panel: the window takes it at 1×
+        let phonePane = CGSize(width: 386, height: 241)      // an iPhone 18 Pro's 16:10 pane, held upright
+        print("15. A pick with Aa unset and Fit windows on: fitted up to a 1000×710 panel at 1× (the window was smaller), then the stop puts it back whole")
+        asks = FitPolicy.Asks()
+        if let (o, w) = await open("defaultup", S0) {
+            print("  before  \(fmt(live(w.windowID)))")
+            print("  " + fitByPolicy(w, panel: ipadPanel, scale: nil, fitWindows: true)); await settle()
+            let during = live(w.windowID)
+            expect("during, the panel's size at 1×", during, during.map { CGRect(origin: $0.origin, size: ipadPanel) })
+            print("  again: " + fitByPolicy(w, panel: ipadPanel, scale: nil, fitWindows: true))
+            for l in stop(keeping: nil) { print("  " + l) }; await settle()
+            expect("after", live(w.windowID), S0)
+            o.end()
+        }
+
+        print("16. Fitted down: a pick with Aa unset on an iPhone's 386×241 pane, then the stop puts it back whole")
+        asks = FitPolicy.Asks()
+        if let (o, w) = await open("defaultdown", S0) {
+            print("  " + fitByPolicy(w, panel: phonePane, scale: nil, fitWindows: true)); await settle()
+            let during = live(w.windowID)
+            expect("during, the pane's size at 1× (or the app's least)", during, during.map { CGRect(origin: $0.origin, size: phonePane) })
+            for l in stop(keeping: nil) { print("  " + l) }; await settle()
+            expect("after", live(w.windowID), S0)
+            o.end()
+        }
+
+        print("17. Fit windows off: Aa unset asks nothing and the window keeps its size; Aa at 1.5× still fits it; then the stop puts it back whole")
+        asks = FitPolicy.Asks()
+        if let (o, w) = await open("settingoff", S0) {
+            let first = fitByPolicy(w, panel: ipadPanel, scale: nil, fitWindows: false); await settle()
+            print("  " + first)
+            tally(first.hasPrefix("no fit") && ledger.isEmpty, "Aa unset with the setting off: nothing asked, nothing recorded")
+            expect("untouched", live(w.windowID), S0)
+            print("  " + fitByPolicy(w, panel: ipadPanel, scale: 1.5, fitWindows: false)); await settle()
+            expect("Aa 1.5×'s size", live(w.windowID), CGRect(origin: S0.origin, size: pad))
+            for l in stop(keeping: nil) { print("  " + l) }; await settle()
+            expect("after", live(w.windowID), S0)
+            o.end()
+        }
+
+        print("18. Fit windows turned off while a window it fitted streams (StreamCoordinator.applyFitSetting): back now")
+        asks = FitPolicy.Asks()
+        if let (o, w) = await open("putback", S0) {
+            print("  " + fitByPolicy(w, panel: ipadPanel, scale: nil, fitWindows: true)); await settle()
+            let change = FitPolicy.afterSettingChange(fitWindows: false, scale: nil, fitted: ledger.record(w.windowID) != nil)
+            tally(change == .putBack, "the change: \(change)")
+            if change == .putBack { for l in stop(keeping: nil) { print("  " + l) } }
+            await settle()
+            expect("after, still streaming in the coordinator", live(w.windowID), S0)
+            print("  then: " + fitByPolicy(w, panel: ipadPanel, scale: nil, fitWindows: false))
+            expect("and nothing fits it again", live(w.windowID), S0)
+            o.end()
+        }
+
+        print("19. A window that cannot be resized: the fit by default asked once, then not again (a viewport sent again), and again after a pick")
+        asks = FitPolicy.Asks()
+        if let (o, w) = await open("fixedask", edge, fixed: true) {
+            let first = fitByPolicy(w, panel: ipadPanel, scale: nil, fitWindows: true); await settle()
+            print("  " + first)
+            if first == "resize refused" {
+                let second = fitByPolicy(w, panel: ipadPanel, scale: nil, fitWindows: true)
+                tally(second == "not asked again", "the same viewport again: \(second)")
+                asks = FitPolicy.Asks()                        // a pick (select's bringForward)
+                let third = fitByPolicy(w, panel: ipadPanel, scale: nil, fitWindows: true)
+                tally(third == "resize refused", "after a pick: \(third)")
+                expect("after", live(w.windowID), edge)
+            } else {
+                print("  (its app took the size: restored as in 15)")
+                for l in stop(keeping: nil) { print("  " + l) }; await settle()
+                expect("after", live(w.windowID), edge)
+            }
+            _ = stop(keeping: nil)
             o.end()
         }
 

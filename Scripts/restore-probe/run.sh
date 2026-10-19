@@ -8,11 +8,15 @@
 # answer (SIGSTOP: about a second, no writes), the virtual display's way home (worked out only), two
 # windows (a pick, then the last device leaving), an app that stops answering during a fit (its size
 # unanswered and recorded, taken once it runs again, then put back), and a resize from the left edge
-# that a re-fit undid (no move: the whole frame back).
+# that a re-fit undid (no move: the whole frame back). Then fitting by default (issue #70; FitPolicy, as
+# fitToViewport asks): a pick with Aa unset fitted up to a 1000×710 panel at 1× and down to an iPhone's
+# 386×241 pane, each back whole at the stop; the setting off (nothing asked with Aa unset, Aa's 1.5× still
+# fitted); the setting turned off while the window streams (back now); a window that cannot be resized
+# asked once, not again for the same viewport, and again after a pick.
 # usage: Scripts/restore-probe/run.sh
 # Builds under .build/restore-probe/: the window's app (owner.swift in a bundle of its own,
 # me.saffer.sill.restoreprobe, never activated) and the driver (driver.swift with the worktree's
-# WindowSizer.swift, WindowRestore.swift and StreamProtocol's sources as one module). It touches no
+# WindowSizer.swift, WindowRestore.swift, FitPolicy.swift and StreamProtocol's sources as one module). It touches no
 # other window, posts no input, makes no virtual display and links no VideoToolbox; the front app is
 # read before and after and must not change. Needs Accessibility and Screen Recording for the app that
 # runs it (the terminal), and an unlocked screen: it says which is missing and exits 2. Exit 0: every
@@ -30,6 +34,7 @@ T=$(mktemp -d)
 cp $ROOT/Sources/StreamProtocol/*.swift $T/
 sed '/^import StreamProtocol$/d' $ROOT/Sources/SillHost/WindowSizer.swift > $T/WindowSizer.swift
 cp $ROOT/Sources/SillHost/WindowRestore.swift $T/WindowRestore.swift
+cp $ROOT/Sources/SillHost/FitPolicy.swift $T/FitPolicy.swift
 cp $HERE/driver.swift $T/main.swift
 swiftc -O -package-name sill $T/*.swift -o $OUT/driver || { rm -rf $T; exit 1 }
 rm -rf $T

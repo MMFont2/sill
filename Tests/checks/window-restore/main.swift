@@ -14,9 +14,13 @@ import CoreGraphics
 // apps that clamp to a minimum, snap to a grid or apply a size late, the virtual display on and off,
 // the last device leaving and Quit, each window's frame held to where the person expects it. The
 // sequences and the rule are the real ones; the glue is written again here and can drift from the
-// coordinator's.
+// coordinator's. Since fitting by default (issue #70; FitPolicy, compiled in too) a fit goes through
+// FitPolicy as `fitToViewport` does: Aa's scale, or 1× with Aa unset while the Mac's Fit windows to the
+// device's screen is on (each session starts with it on or off, and the model turns it on and off while a
+// window streams: fitted now, or put back now), and a fit that left its window short is not asked again
+// until a pick.
 //
-// Compiled alone with this file (build.sh): swiftc -O WindowRestore.swift main.swift
+// Compiled alone with this file (build.sh): swiftc -O WindowRestore.swift FitPolicy.swift main.swift
 
 var failures = 0
 var passes = 0
@@ -622,6 +626,10 @@ struct Model {
     // windowsChanged's: the streamed window was full screen when last listed, and its looks off the list.
     var listedFullScreen: CGWindowID? = nil
     var missingLooks = 0
+    // Fit windows to the device's screen (HostConfig.fitWindows) and the coordinator's `fitAsks`.
+    var fitWindows: Bool
+    var asks = FitPolicy.Asks()
+    var fitRng: RNG
     // The oracle.
     var spells: [CGWindowID: Spell] = [:]
     var expectHome: [CGWindowID: [CGRect]] = [:]    // a staged window's way home
@@ -633,6 +641,8 @@ struct Model {
         self.seed = seed
         rng = RNG(s: seed)
         side = RNG(s: seed ^ 0x5EED_5EED)
+        fitRng = RNG(s: seed ^ 0xF17_F17)
+        fitWindows = fitRng.chance(0.7)
         mac.fullScreenWritesDone = side.chance(0.5)
         mac.dice = RNG(s: side.next())
         let kinds = [AppKind(minSize: S(200, 150), grid: 1, late: false), AppKind(minSize: S(700, 450), grid: 1, late: false),
@@ -655,23 +665,29 @@ struct Model {
 
     mutating func note(_ s: String) { seen[s, default: 0] += 1 }
 
-    // StreamCoordinator.fitToViewport, around WindowSizer.resize's sequence (WindowRestore.fit).
+    // StreamCoordinator.fitToViewport (FitPolicy: the fit, the 2 pt compare, the asks), around
+    // WindowSizer.resize's sequence (WindowRestore.fit).
     mutating func fit(_ id: CGWindowID) {
-        guard !shuttingDown, let panel, let scale, scale > 0 else { return }
-        let target = S((panel.width / scale).rounded(), (panel.height / scale).rounded())
+        guard !shuttingDown, let f = FitPolicy.fit(panel: panel, scale: scale.map(Double.init), fitWindows: fitWindows) else { return }
+        let target = f.size
         guard let current = mac.wins[id], !current.closed else { return }
-        if abs(current.frame.width - target.width) <= 2, abs(current.frame.height - target.height) <= 2 { return }
+        guard FitPolicy.needsResize(current: current.frame.size, target: target) else { return }
+        guard asks.shouldAsk(window: id, target: target, current: current.frame.size) else { note("fit: not asked again"); return }
+        if f.reason == .byDefault { note("fit by default") }
         let readsFailed = mac.readsFailed
         let axBefore = mac.ax(id)
         defer { if mac.readsFailed > readsFailed { note("read-back failed") } }
         switch WindowRestore.fit(id, to: target, fallback: current.frame, on: &mac) {
         case .fullScreen:
             note("fit: full screen")
+            asks.asked(window: id, target: target, after: current.frame.size)
         case .refused:
             note("fit refused")
+            asks.asked(window: id, target: target, after: current.frame.size)
             // Refused, with any nudge made for it put back: where it was.
             check(mac.ax(id) == axBefore, "model seed \(seed): window \(id) moved by a refused fit, from \(String(describing: axBefore)) to \(String(describing: mac.ax(id)))")
         case .fitted(let before, let after, let timedOut):
+            asks.asked(window: id, target: target, after: after.size)
             if timedOut { note("fit: no answer") }
             let had = ledger.record(id) != nil
             ledger.fitted(id, handle: id, before: before, after: after, asked: target)
@@ -926,7 +942,9 @@ struct Model {
         let id = ids[rng.int(ids.count)]
         switch rng.int(100) {
         case 0..<16:
-            log.append("pick \(id)"); select(.window(id))
+            log.append("pick \(id)")
+            asks = FitPolicy.Asks()               // select's bringForward: a pick asks afresh
+            select(.window(id))
         case 16..<20:
             log.append("pick desktop"); select(.desktop)
         case 20..<34:
@@ -964,8 +982,20 @@ struct Model {
                 if case .window = active { select(active) }
             }
         case 82..<88:
-            log.append("last device left"); panel = nil; scale = nil
+            log.append("last device left"); panel = nil; scale = nil; asks = FitPolicy.Asks()
             if active != .none { select(.none) }
+        case 88..<92:
+            // Fit windows to the device's screen turned on or off on the Mac: StreamCoordinator.adopt, then
+            // applyFitSetting for the window streaming in regular mode.
+            fitWindows.toggle()
+            log.append("fit windows \(fitWindows ? "on" : "off")")
+            if case .window(let a) = active, !(vd && staged?.id == a) {
+                switch FitPolicy.afterSettingChange(fitWindows: fitWindows, scale: scale.map(Double.init), fitted: ledger.record(a) != nil) {
+                case .fitNow: note("setting on: fitted now"); fit(a)
+                case .putBack: note("setting off: put back"); restoreFits(keeping: nil, why: "setting off")
+                case .nothing: break
+                }
+            }
         default:
             break
         }
@@ -1000,7 +1030,8 @@ let needed = ["first fit", "re-fit", "fit refused", "fit: full screen", "fit: no
               "compound changes between fits", "re-fit after a resize from an edge", "entering full screen, off the list",
               "leaving full screen, off the list", "kept streaming off the list", "stop during a full-screen transition",
               "went back after leaving full screen while it streamed", "stop: switch", "stop: desktop", "stop: none", "stop: quit", "stop: gone", "decision: whole", "decision: moved", "decision: resized", "decision: full screen", "decision: home", "decision: settle",
-              "staged: with a home", "staged: as found", "stage released", "poll restart"]
+              "staged: with a home", "staged: as found", "stage released", "poll restart",
+              "fit by default", "fit: not asked again", "setting on: fitted now", "setting off: put back", "stop: setting off"]
 for k in needed { check((globalSeen[k] ?? 0) > 0, "model: never came up: \(k)") }
 print("window-restore: the model, \(sessions) sessions: " + needed.map { "\($0) \(globalSeen[$0] ?? 0)" }.joined(separator: ", "))
 

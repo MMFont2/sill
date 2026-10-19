@@ -52,6 +52,12 @@ MUTANTS = {
     "M23 16:9 for no picture": ("static let defaultAspect: CGFloat = 1.6", "static let defaultAspect: CGFloat = 16.0 / 9.0"),
     "M24 the pane follows a fitted window": ("guard !fitsWindowToPane, video.width > 0", "guard video.width > 0"),
     "M25 the picture's shape upside down": ("return video.width / video.height", "return video.height / video.width"),
+    "M25b the Mac's word ignored (#70)": ("window && (textScale != nil || onVirtualDisplay || macFitsPanel == true)",
+                                         "window && (textScale != nil || onVirtualDisplay)"),
+    "M25c a Mac before #70 taken as fitting": ("window && (textScale != nil || onVirtualDisplay || macFitsPanel == true)",
+                                               "window && (textScale != nil || onVirtualDisplay || macFitsPanel != false)"),
+    "M25d the Desktop fitted by the Mac's word": ("window && (textScale != nil || onVirtualDisplay || macFitsPanel == true)",
+                                                  "(window && (textScale != nil || onVirtualDisplay)) || macFitsPanel == true"),
     # The connect screen's room above the laptop pose's fold.
     "M45b the inferred crease bounds the column": ("guard case .known = fold, let crease = crease(size, fold) else { return nil }",
                                                    "guard let crease = crease(size, fold) else { return nil }"),
