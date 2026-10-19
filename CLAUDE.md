@@ -9,8 +9,8 @@ Formerly winstream; the folder still carries the old name.
 ## Current step
 
 **Which of the Mac's displays the Desktop shows (2026-10-20, branch `display-stepping` from origin/main at
-d1fa97e; issue #91, with #139 closed into it; the plan, its twelve open questions with the defaults taken,
-and the results are in `docs/display-stepping-plan.md`).** Noah on #91: "the tapping method. The Desktop
+d1fa97e, main at 9a8e30c merged in; issue #91, with #139 closed into it; the plan, its twelve open
+questions with the defaults taken, and the results are in `docs/display-stepping-plan.md`).** Noah on #91: "the tapping method. The Desktop
 button shows which desktop the stream is on, a monitor or the virtual display, and when there is another
 one it says so and a tap moves to the next. With one display it is the plain Desktop button as today."
 Wire, host and device; additive, no new kind.
@@ -35,7 +35,8 @@ Wire, host and device; additive, no new kind.
   of the same display needs nothing), a pick naming a display not listed ("Desktop: display 3 is not
   connected; streaming Built-in Retina Display (1 of 2), the main display."), a display gone while the
   Desktop streams it, by the catalog's look or under a capture that stopped while it is offline
-  (`displaysChanged`, `captureStopped`: "Desktop: LG UltraFine is gone; streaming Built-in Retina
+  (`displaysChanged`; `captureStopped`, which reads the displays again first, so a lid closed under a
+  monitor gives that monitor, now main: "Desktop: LG UltraFine is gone; streaming Built-in Retina
   Display, the main display, instead.", a restart there at once), and with two or more displays the
   stream's line names it ("Streaming the whole desktop of LG UltraFine (2 of 2) at …"; with one, the
   line as it was). The Mac's menu card says "Whole Desktop" as before.

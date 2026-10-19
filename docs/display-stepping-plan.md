@@ -92,7 +92,9 @@ Additive both ways; no new kind (29–31 and 33–44 stay where open pull reques
 5. **A display gone while the Desktop streams it** (the catalog's poll no longer lists it, or its
    capture stops and it is no longer online): the Desktop restarts on the main display, with a line
    ("Desktop: LG UltraFine is gone; streaming Built-in Retina Display, the main display, instead.");
-   the devices see the new list.
+   the devices see the new list. When the capture stopped first, the displays are read again before
+   the restart, so the main display is the one macOS names now (a lid closed under a monitor makes
+   that monitor main), not the one of the catalog's last look.
 6. **The log.** With two or more displays, the stream's line says which: "Streaming the whole
    desktop of LG UltraFine (2 of 2) at 3024×1964, 60 fps, 40 Mbps"; with one, it is today's line
    ("Streaming the whole desktop at …"), and a synthetic host with one test pattern prints exactly
@@ -167,6 +169,17 @@ Additive both ways; no new kind (29–31 and 33–44 stay where open pull reques
   #156's second tap on Desktop (its full screen) is out since Noah's word on #92 (a Settings toggle and
   a shake), so a tap while the Desktop streams is free for the next display.
 - **#158** (visionOS, a coordinator per session): each would keep its own Desktop display.
+- **#173** (addhumal, opened 2026-10-19, "Closes #91"): the same decision built separately, so only
+  one of the two should land. Its wire is this one's but for the pick: the same `DisplayInfo`,
+  `displays` and `desktopDisplay` (#66's shape), and the display beside the Desktop's object,
+  `{"desktop":{},"display":N}` (`DesktopPick`), which a host from before also reads as the Desktop.
+  Where its rules differ, read from its diff: the displays go main first, then by display ID rather
+  than by where they stand; the label is "Desktop 1", "Desktop 2" in "Desktop"'s place (this
+  branch's "1 of 2" is narrower and says how many there are); VoiceOver hears "Built-in Retina
+  Display (1 of 2), showing now. Tap for Studio Display."; a pick without a display (a device from
+  before, or this device's own requests) keeps the display picked last rather than the main one; no
+  line names the display, and a display that goes while the Desktop shows it ends the stream until
+  the device asks for the Desktop again. Its check: eight cases in `compatibility`.
 
 ## Open questions for Noah (the default is taken unless Noah says otherwise)
 
