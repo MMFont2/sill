@@ -234,12 +234,15 @@ public struct Goodbye: Codable, Sendable, Equatable {
     /// The host no longer serves this device's version: update it (DeviceGate).
     public static let update = "update"
     /// The Mac is going to sleep ("sleep": NSWorkspace says so under the AppKit loop, in Sill.app and
-    /// the CLI with --virtual-display), shutting down ("shutdown") or restarting ("restart": the
-    /// reason macOS gives Sill.app's Quit; a log out is a "quit", the Mac staying up). Each with
-    /// the Mac's words, which say what happened in plain words for a device from before these
-    /// reasons (it shows a reason it does not know by its `message`), and a reconnect, which such a
-    /// device follows as after any end. This build's words and its waits: GoodbyePolicy and
-    /// DiscoveryPolicy (docs/update-notice-plan.md §7.3). Additive: three reason strings.
+    /// the CLI with --virtual-display), shutting down ("shutdown") or restarting ("restart"). Which of
+    /// the last two Sill.app says comes from macOS (HostGoodbye): a quit Apple event's reason says
+    /// which, and NSWorkspace's willPowerOff, which comes for a log out, a restart or a shut down
+    /// alike, makes it "shutdown" in the words "‹Mac› is shutting down or restarting."; a log out
+    /// that says so is a "quit", the Mac staying up. Each with the Mac's words, which say what
+    /// happened in plain words for a device from before these reasons (it shows a reason it does not
+    /// know by its `message`), and a reconnect, which such a device follows as after any end. This
+    /// build's words and its waits: GoodbyePolicy and DiscoveryPolicy (docs/update-notice-plan.md
+    /// §7.3). Additive: three reason strings.
     public static let sleep = "sleep", shutdown = "shutdown", restart = "restart"
 
     /// "‹Mac› is going to sleep."
@@ -255,5 +258,11 @@ public struct Goodbye: Codable, Sendable, Equatable {
     /// "‹Mac› is restarting."
     public static func restarting(mac: String) -> Goodbye {
         Goodbye(reason: restart, message: "\(mac) is restarting.", reconnect: true)
+    }
+
+    /// "‹Mac› is shutting down or restarting.": macOS said the Mac is about to log out, restart or
+    /// shut down (willPowerOff) and nothing said which.
+    public static func shuttingDownOrRestarting(mac: String) -> Goodbye {
+        Goodbye(reason: shutdown, message: "\(mac) is shutting down or restarting.", reconnect: true)
     }
 }

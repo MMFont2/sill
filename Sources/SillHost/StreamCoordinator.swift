@@ -598,6 +598,7 @@ package final class StreamCoordinator {
         if let testMenuLine { print(testMenuLine) }   // TEST ONLY, and only with SILL_TEST_MENU_PID set
         server.start()
         observeSleep()               // under the AppKit loop: the Mac about to sleep tells every device why
+        observePowerOff()            // and the Mac about to log out, restart or shut down sets the goodbye Sill's end sends
         remote?.apply(config)        // the remote door, when Remote Access is on (or a pairing window opens later)
         if promptForPermissions || CGPreflightScreenCaptureAccess() { await catalog.refreshWindows() }
         if let match = preselect?.lowercased(),
@@ -1884,18 +1885,21 @@ package final class StreamCoordinator {
     /// Called by HostShutdown on the main queue just before `exit` (or, for the app's Quit, just
     /// before AppKit exits): every key and button a device holds down on the Mac goes up (a modifier
     /// left down would outlive Sill: the Mac's next click a ⌘-click), every connected device hears why
-    /// (kind 22, at most 0.1 s: "quit", or for the app's Quit at a restart or a shut down the reason
-    /// macOS gave it, `quitReason`, HostGoodbye.forQuit; one line then; a device already told why, by
-    /// the Mac's sleep goodbye, hears nothing more), then a window Sill sized goes back to its own
-    /// frame (`restoreFits`), the staged window home, display gone. Capture and encoder need no stop;
-    /// the process is about to end. The CLI without --virtual-display lets go of the keys, puts a
-    /// sized window back and dies of the signal with no goodbye (`releaseKeysForExit`): its devices
-    /// notice by liveness.
-    package func shutdownForExit(quitReason: UInt32? = nil) {
+    /// (kind 22, at most 0.1 s: HostGoodbye.forQuit, from the reason macOS gave the app's Quit,
+    /// `quitReason`, whether Sill's own Quit with no Apple event ended it, `byMenu`, and whether macOS
+    /// said the Mac is about to log out, restart or shut down, `observePowerOff`: "restart",
+    /// "shutdown", or "quit" as before; so a signal after willPowerOff says "shutdown" too; one line
+    /// then; a device already told why, by the Mac's sleep goodbye, hears nothing more), then a window
+    /// Sill sized goes back to its own frame (`restoreFits`), the staged window home, display gone.
+    /// Capture and encoder need no stop; the process is about to end. The CLI without
+    /// --virtual-display lets go of the keys, puts a sized window back and dies of the signal with no
+    /// goodbye (`releaseKeysForExit`): its devices notice by liveness.
+    package func shutdownForExit(quitReason: UInt32? = nil, byMenu: Bool = false) {
         injector.releaseAll()
-        let goodbye = HostGoodbye.forQuit(reason: quitReason, mac: macName)
-        let told = server.goodbyeAll(goodbye, within: 0.1)
-        if let line = HostGoodbye.line(goodbye, devices: told) { print(line) }
+        let poweringOff = HostGoodbye.poweringOff(since: powerOffAt.at, now: ProcessInfo.processInfo.systemUptime)
+        let going = HostGoodbye.forQuit(reason: quitReason, byMenu: byMenu, poweringOff: poweringOff)
+        let told = server.goodbyeAll(HostGoodbye.goodbye(going, mac: macName), within: 0.1)
+        if let line = HostGoodbye.line(going, devices: told) { print(line) }
         shuttingDown = true
         restoreFits(keeping: nil)
         stage.release()
@@ -1917,6 +1921,38 @@ package final class StreamCoordinator {
     }
     private var sleepObserver: NSObjectProtocol?
 
+    /// macOS said the Mac is about to log out, restart or shut down, while the AppKit loop runs:
+    /// NSWorkspace's willPowerOff (issue #105; HostGoodbye has what is known of when it comes). For
+    /// the next ten minutes (`HostGoodbye.powerOffStands`) the goodbye Sill's end sends is "shutdown"
+    /// in the words "‹Mac› is shutting down or restarting." (`shutdownForExit`: HostGoodbye.forQuit's
+    /// `powerOff`), unless a quit Apple event's reason says which: the SIGTERM that may end Sill
+    /// without a Quit sends it, where it sent "quit", and so does a quit Apple event without a
+    /// reason, but never Sill's own Quit from its menu. Nothing is sent now: willPowerOff comes for a
+    /// log out as well, and someone may still cancel any of the three while Sill runs on. One line
+    /// each time. Once, from `start`.
+    private func observePowerOff() {
+        guard appKitLoop, powerOffObserver == nil else { return }
+        let at = powerOffAt
+        // On the posting thread (queue nil), the main thread: it touches only the time, which locks.
+        powerOffObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.willPowerOffNotification,
+                                                                             object: nil, queue: nil) { _ in
+            at.set(ProcessInfo.processInfo.systemUptime)
+            print(HostGoodbye.powerOffLine)
+        }
+    }
+    private var powerOffObserver: NSObjectProtocol?
+    /// When willPowerOff last came (`observePowerOff`), read at Sill's end (`shutdownForExit`).
+    private let powerOffAt = PowerOffTime()
+
+    /// Set by willPowerOff's observer and read at Sill's end, both on the main thread under the AppKit
+    /// loop; a lock all the same, as nothing here is main-actor state.
+    private final class PowerOffTime: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value: Double?
+        func set(_ now: Double) { lock.lock(); value = now; lock.unlock() }
+        var at: Double? { lock.lock(); defer { lock.unlock() }; return value }
+    }
+
     /// The same, now: the bare binary's `-SillSleepAfter` (TEST ONLY, DebugHooks), as if the Mac were
     /// about to sleep.
     package func goodbyeBeforeSleep() {
@@ -1933,9 +1969,8 @@ package final class StreamCoordinator {
         let server: StreamServer
         let mac: String
         func send() {
-            let goodbye = Goodbye.asleep(mac: mac)
-            let told = server.goodbyeAll(goodbye, within: 0.1, close: true)
-            if let line = HostGoodbye.line(goodbye, devices: told) { print(line) }
+            let told = server.goodbyeAll(HostGoodbye.goodbye(.sleep, mac: mac), within: 0.1, close: true)
+            if let line = HostGoodbye.line(.sleep, devices: told) { print(line) }
         }
     }
 

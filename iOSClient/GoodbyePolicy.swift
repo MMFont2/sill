@@ -21,8 +21,10 @@ import StreamProtocol
 /// asleep, or a Mac going down left alone until it is listed afresh, the app's return from the
 /// background, or ten minutes), and through the remote door only for a session that came that way: at
 /// home such a dial would only replace the words while the Mac is away, and the Mac's row brings it
-/// back. A device from before them shows the Mac's `message` ("‹Mac› is going to sleep.") and follows
-/// its `reconnect`.
+/// back. "shutdown" is worded "is shutting down or restarting": a Mac sends it when macOS said it is
+/// about to log out, restart or shut down without saying which (willPowerOff, HostGoodbye), as well as
+/// for a shut down it knows. A device from before them shows the Mac's `message` ("‹Mac› is going to
+/// sleep.", "‹Mac› is shutting down or restarting.") and follows its `reconnect`.
 enum GoodbyePolicy {
     struct Outcome: Equatable {
         /// The connect screen's status line.
@@ -82,7 +84,7 @@ enum GoodbyePolicy {
             return Outcome(text: "\(mac) went to sleep. This \(device) reconnects when it wakes.",
                            reconnect: true, remoteAllowed: saved && remote, isNotice: true, went: .asleep)
         case Goodbye.shutdown:
-            return Outcome(text: "\(mac) is shutting down. This \(device) reconnects when it’s back.",
+            return Outcome(text: "\(mac) is shutting down or restarting. This \(device) reconnects when it’s back.",
                            reconnect: true, remoteAllowed: saved && remote, isNotice: true, went: .off)
         case Goodbye.restart:
             return Outcome(text: "\(mac) is restarting. This \(device) reconnects when it’s back.",

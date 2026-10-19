@@ -43,9 +43,11 @@ package enum HostShutdown {
     /// watchdog, but no exit: the caller returns to AppKit, which ends the process (exit code 0).
     /// `quitReason`: the reason macOS gave the quit (`kAEQuitReason`, read by the app's
     /// applicationShouldTerminate), nil for a quit from the menu; a restart's or a shut down's tells
-    /// every device so (HostGoodbye.forQuit).
+    /// every device so (HostGoodbye.forQuit). `byMenu`: Sill's own Quit with no Apple event (its menu,
+    /// ⌘Q), which is "quit" whatever came before. A signal's goodbye (`begin`) has no reason: "quit",
+    /// or "shutdown" within ten minutes of NSWorkspace's willPowerOff (StreamCoordinator.observePowerOff).
     @MainActor
-    package static func releaseForQuit(coordinator: StreamCoordinator?, quitReason: UInt32? = nil) {
+    package static func releaseForQuit(coordinator: StreamCoordinator?, quitReason: UInt32? = nil, byMenu: Bool = false) {
         guard !began else { return }
         began = true
         print("Shutting down: putting the window back and removing the virtual display.")
@@ -53,7 +55,7 @@ package enum HostShutdown {
             print("Shutdown timed out; exiting anyway.")
             exit(0)
         }
-        coordinator?.shutdownForExit(quitReason: quitReason)
+        coordinator?.shutdownForExit(quitReason: quitReason, byMenu: byMenu)
     }
 
     static func begin(code: Int32, coordinator: () -> StreamCoordinator?) {
