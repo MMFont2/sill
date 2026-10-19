@@ -5033,7 +5033,11 @@ good.
   log file),
   `WindowCatalog` (polls windows and thumbnails only while a client is
   connected; icons; installed apps in the background; the Mac's displays in
-  DesktopDisplays' order, named by NSScreen, `desktopDisplays`),
+  DesktopDisplays' order, named by NSScreen, `desktopDisplays`), `InstalledApps`
+  (where those are found: each applications folder and the folders inside it,
+  at any depth (#135's), never inside a bundle, another package or a
+  framework, and never through a link inside a scanned folder (one given that
+  is itself a link is followed), #76; pure, `Tests/checks/installed-apps`),
   `DesktopDisplays` (which of the Mac's displays the Desktop shows, issue #91:
   the order a device steps through them, main first, never Sill's own virtual
   display; the display a pick streams; the window list's entries; the lines;
@@ -5613,7 +5617,8 @@ good.
   `tour` and `phone-portrait` take the Duo's real sizes too), `encoder-mailbox`,
   `encoder-slowstate`, `fence`, `gesture-chords`, `gestures`, `goodbye`,
   `hardware-keyboard` (iOSClient's HardwareKeyboardPolicy),
-  `home-device`, `home-model`, `home-records`, `home-txt`, `key-strokes` (the
+  `home-device`, `home-model`, `home-records`, `home-txt`, `installed-apps`
+  (InstalledApps on a fake applications folder), `key-strokes` (the
   host's KeyStrokes and the device's KeyChords, against a model of the Mac's
   HID state table and of a Mac from before), `ledger`,
   `menu-state` (iOSClient's MacMenuState), `menus` (the host's MenuFormat and
