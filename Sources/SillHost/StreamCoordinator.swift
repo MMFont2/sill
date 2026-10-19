@@ -2346,6 +2346,11 @@ package final class StreamCoordinator {
     /// no longer lists (rule 5); anything else stops, as it always did (the device asks again).
     private func captureStopped() async {
         if active == .desktop, !synthetic, let gone = streamedDisplay, !Self.displayOnline(gone.id), !switching {
+            // The displays looked at again first, so the stand-in is the main display macOS names now
+            // (a lid closed under a monitor makes that monitor main), not the one of the catalog's last
+            // look, which can be the display that went. A pick or a stop meanwhile has the say.
+            await catalog.refreshWindows()
+            guard active == .desktop, streamedDisplay?.id == gone.id, !switching else { return }
             let listed = desktopDisplays.filter { $0.id != gone.id }
             print(DesktopDisplays.goneLine(gone, instead: DesktopDisplays.resolve(nil, in: listed), in: listed))
             desktopDisplayID = nil
