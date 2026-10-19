@@ -56,6 +56,7 @@ package enum HostShutdown {
             exit(0)
         }
         coordinator?.shutdownForExit(quitReason: quitReason, byMenu: byMenu)
+        HostLog.shared.flush()   // its lines in Sill.log before AppKit exits
     }
 
     static func begin(code: Int32, coordinator: () -> StreamCoordinator?) {
@@ -69,6 +70,7 @@ package enum HostShutdown {
             exit(code)
         }
         MainActor.assumeIsolated { coordinator()?.shutdownForExit() }
+        HostLog.shared.flush()   // its lines, the goodbye's among them, in Sill.log before the exit
         exit(code)
     }
 
