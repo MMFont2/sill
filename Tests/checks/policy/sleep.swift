@@ -209,37 +209,43 @@ func afterSleepPolicy() {
 
     check("asleepWait: the wait after the third dial that did not connect, 20 s",
           P.asleepWait == 20 && P.asleepWait == P.reconnectRetry[P.reconnectQuietAfter - 1])
-    func start(_ since: Double?, _ asleepAt: Double?) -> (Int, Double?) {
-        let r = P.listingStart(listedSince: since, asleepAt: asleepAt)
+    func start(_ since: Double?, _ asleepAt: Double?, renewed: Bool = false) -> (Int, Double?) {
+        let r = P.listingStart(listedSince: since, asleepAt: asleepAt, renewed: renewed)
         return (r.failed, r.lastDialAt)
     }
-    check("listingStart: no goodbye, no count", [nil, -5, 0, 100, 1e9].allSatisfy { start($0, nil) == (0, nil) })
+    check("listingStart: no goodbye, no count", [nil, -5, 0, 100, 1e9].allSatisfy { start($0, nil) == (0, nil) && start($0, nil, renewed: true) == (0, nil) })
     check("listingStart: listed when the Mac said it is going to sleep: asleep, three dials, the last at the goodbye",
           start(50, 100) == (3, 100) && start(-1e9, 100) == (3, 100))
     check("listingStart: listed at the goodbye's moment counts as listed then", start(100, 100) == (3, 100))
     check("listingStart: a listing of unknown age counts as listed then", start(nil, 100) == (3, 100))
     check("listingStart: listed afresh since: the Mac awake, no count", start(100.001, 100) == (0, nil) && start(400, 100) == (0, nil))
+    check("listingStart: listed by a browser made at a return that counts (renewed): the Mac as it is now, no count",
+          start(50, 100, renewed: true) == (0, nil) && start(nil, 100, renewed: true) == (0, nil) && start(100, 100, renewed: true) == (0, nil))
     check("listingStart then redialRow: the first dial 20 s after the goodbye, then every 30 s",
           redial(3, 100, 119.99) == (false, 120) && redial(3, 100, 120) == (true, nil) && redial(4, 120, 149) == (false, 150))
     check("waitingLine: no goodbye, the reconnect's own lines",
-          (0...12).allSatisfy { P.waitingLine(mac: mini, failed: $0, lastDialAt: 50, direct: $0 % 2 == 0, asleepAt: nil)
+          (0...12).allSatisfy { P.waitingLine(mac: mini, failed: $0, lastDialAt: 50, direct: $0 % 2 == 0, wentAt: nil)
               == P.reconnectLine(mac: mini, failed: $0, direct: $0 % 2 == 0) }
-          && P.waitingLine(mac: mini, failed: 0, lastDialAt: nil, direct: false, asleepAt: nil) == "Reconnecting to Mac mini\u{2026}")
+          && P.waitingLine(mac: mini, failed: 0, lastDialAt: nil, direct: false, wentAt: nil) == "Reconnecting to Mac mini\u{2026}")
     check("waitingLine: counted asleep, no dial since the goodbye: the end's own words stay (nil)",
-          P.waitingLine(mac: mini, failed: 3, lastDialAt: 100, direct: false, asleepAt: 100) == nil
-          && P.waitingLine(mac: mini, failed: 3, lastDialAt: 100, direct: true, asleepAt: 100) == nil)
-    check("waitingLine: after a dial since the goodbye, #69's lines", P.waitingLine(mac: mini, failed: 4, lastDialAt: 120, direct: false, asleepAt: 100) == quiet
-          && P.waitingLine(mac: mini, failed: 12, lastDialAt: 360, direct: true, asleepAt: 100) == stopped)
-    check("waitingLine: a listing afresh after the goodbye (no count) says Reconnecting",
-          P.waitingLine(mac: mini, failed: 0, lastDialAt: nil, direct: false, asleepAt: 100) == "Reconnecting to Mac mini\u{2026}")
+          P.waitingLine(mac: mini, failed: 3, lastDialAt: 100, direct: false, wentAt: 100) == nil
+          && P.waitingLine(mac: mini, failed: 3, lastDialAt: 100, direct: true, wentAt: 100) == nil)
+    check("waitingLine: after a dial since the goodbye, #69's lines", P.waitingLine(mac: mini, failed: 4, lastDialAt: 120, direct: false, wentAt: 100) == quiet
+          && P.waitingLine(mac: mini, failed: 12, lastDialAt: 360, direct: true, wentAt: 100) == stopped
+          && P.waitingLine(mac: mini, failed: 1, lastDialAt: 100.001, direct: false, wentAt: 100) == "Reconnecting to Mac mini\u{2026}")
+    check("waitingLine: a listing with no dial yet after the goodbye (listed afresh, released, renewed): the words stay until its first dial",
+          P.waitingLine(mac: mini, failed: 0, lastDialAt: nil, direct: false, wentAt: 100) == nil
+          && P.waitingLine(mac: mini, failed: 0, lastDialAt: nil, direct: true, wentAt: 100) == nil)
     check("firstRemoteDial: no wait, or 20 s after the Mac said it went", P.firstRemoteDial(macWentAt: nil) == 0
           && P.firstRemoteDial(macWentAt: 100) == 120 && P.firstRemoteDial(macWentAt: 0) == P.asleepWait)
 
     // reconnectRow after a goodbye: "quit" holds a row listed before it for quitWait (3 s); "shutdown"
-    // and "restart" (offAt) hold it for good, and a row listed afresh is taken by the usual rules.
-    func row(net: Double?, dir: Double? = nil, left: Double? = nil, quit: Double? = nil, off: Double? = nil, _ now: Double) -> (String?, Double?) {
+    // and "restart" (offAt) for offHold (10 minutes) at most, until it is listed afresh or renewed by a
+    // return (networkRenewed, directRenewed), and a row listed afresh is taken by the usual rules.
+    func row(net: Double?, dir: Double? = nil, left: Double? = nil, quit: Double? = nil, off: Double? = nil,
+             netRenewed: Bool = false, dirRenewed: Bool = false, _ now: Double) -> (String?, Double?) {
         let r = P.reconnectRow(network: net.map { _ in "network" }, networkSince: net, direct: dir.map { _ in "direct" }, directSince: dir,
-                               networkLeftAt: left, quitAt: quit, offAt: off, now: now)
+                               networkLeftAt: left, quitAt: quit, offAt: off, networkRenewed: netRenewed, directRenewed: dirRenewed, now: now)
         return (r.take, r.recheckAt)
     }
     check("reconnectRow (quit): a row listed before the goodbye is left alone for 3 s, looked at again then",
@@ -248,64 +254,141 @@ func afterSleepPolicy() {
     check("reconnectRow (quit): a row listed afresh since the goodbye is taken at once", row(net: 100.2, quit: 100, 100.3) == ("network", nil))
     check("reconnectRow (quit): a Direct row listed before it waits out the 3 s, then its own 6 s",
           row(net: nil, dir: 50, quit: 100, 101) == (nil, 103) && row(net: nil, dir: 50, quit: 100, 103) == ("direct", nil))
-    check("reconnectRow (shut down or restart): a row listed before the goodbye is never taken, nor looked at again",
-          [100.5, 103, 1000, 1e7].allSatisfy { row(net: 50, off: 100, $0) == (nil, nil) } && row(net: 100, off: 100, 5000) == (nil, nil))
-    check("reconnectRow (shut down or restart): a Direct row listed before it, never", row(net: nil, dir: 50, off: 100, 1e6) == (nil, nil))
+    check("offHold: 10 minutes", P.offHold == 600)
+    check("reconnectRow (shut down or restart): a row listed before the goodbye is left alone for 10 minutes, looked at again then",
+          [100.5, 103, 400, 699.99].allSatisfy { row(net: 50, off: 100, $0) == (nil, 700) } && row(net: 100, off: 100, 650) == (nil, 700))
+    check("reconnectRow (shut down or restart): 10 minutes after the goodbye a row that never left is taken",
+          row(net: 50, off: 100, 700) == ("network", nil) && row(net: 100, off: 100, 1e7) == ("network", nil))
+    check("reconnectRow (shut down or restart): a Direct row listed before it, for 10 minutes, then its own rules",
+          row(net: nil, dir: 50, off: 100, 1e3 - 301) == (nil, 700) && row(net: nil, dir: 50, off: 100, 700) == ("direct", nil))
     check("reconnectRow (shut down or restart): a row listed afresh is taken at once (the Mac back, Sill open again)",
           row(net: 160, off: 100, 160) == ("network", nil) && row(net: 100.001, off: 100, 100.002) == ("network", nil))
+    check("reconnectRow (shut down or restart): a row a return renewed is taken at once, its listing as old as it is",
+          row(net: 50, off: 100, netRenewed: true, 130) == ("network", nil) && row(net: 100, off: 100, netRenewed: true, 100.1) == ("network", nil))
+    check("reconnectRow (shut down or restart): a Direct row a return renewed waits its own 6 s and the network's 10 s",
+          row(net: nil, dir: 50, left: 101, off: 100, dirRenewed: true, 105) == (nil, 111)
+          && row(net: nil, dir: 50, left: 101, off: 100, dirRenewed: true, 111) == ("direct", nil))
+    check("reconnectRow (shut down or restart): one row renewed says nothing of the other",
+          row(net: nil, dir: 50, off: 100, netRenewed: true, 130) == (nil, 700) && row(net: 50, off: 100, dirRenewed: true, 130) == (nil, 700))
     check("reconnectRow (shut down or restart): a Direct row listed afresh waits its own 6 s and the network's 10 s",
           row(net: nil, dir: 160, left: 101, off: 100, 160) == (nil, 166) && row(net: nil, dir: 160, left: 101, off: 100, 166) == ("direct", nil)
           && row(net: nil, dir: 160, left: 158, off: 100, 166) == (nil, 168))
     check("reconnectRow (shut down or restart): an old network row beside a fresh Direct one: the Direct rules",
           row(net: 50, dir: 160, off: 100, 170) == ("direct", nil))
-    check("reconnectRow: without a goodbye's hold, the rules as before", row(net: 50, 100) == ("network", nil) && row(net: nil, dir: 50, 56) == ("direct", nil))
+    check("reconnectRow: without a goodbye's hold, the rules as before", row(net: 50, 100) == ("network", nil) && row(net: nil, dir: 50, 56) == ("direct", nil)
+          && row(net: 50, netRenewed: true, 100) == ("network", nil))
     // A listed row whose listing time is not known (no sighting for its name) counts as listed before
-    // the goodbye: held for good after a shut down or restart, for quitWait after a quit.
+    // the goodbye: held for 10 minutes after a shut down or restart, for quitWait after a quit.
     func unknownSince(quit: Double? = nil, off: Double? = nil, _ now: Double) -> (String?, Double?) {
         let r = P.reconnectRow(network: "network", networkSince: nil, direct: nil as String?, directSince: nil, networkLeftAt: nil,
                                quitAt: quit, offAt: off, now: now)
         return (r.take, r.recheckAt)
     }
-    check("reconnectRow: a listed row of unknown age is held after a shut down or restart, for good",
-          unknownSince(off: 100, 101) == (nil, nil) && unknownSince(off: 100, 1e6) == (nil, nil))
+    check("reconnectRow: a listed row of unknown age is held after a shut down or restart for 10 minutes",
+          unknownSince(off: 100, 101) == (nil, 700) && unknownSince(off: 100, 700) == ("network", nil))
     check("reconnectRow: a listed row of unknown age is held after a quit for its 3 s, then taken",
           unknownSince(quit: 100, 101) == (nil, 103) && unknownSince(quit: 100, 103) == ("network", nil))
 
-    // A model of the reconnect after the Mac's own goodbye at t = 0, as the glue runs it (reconnectIfListed:
-    // reconnectRow, listingStart on a listing seen afresh, redialRow, waitingLine while not dialling and
-    // the dial's line when dialling; cameForward: listingStart again), every 50 ms; a dial the Mac
-    // answers connects, one it does not is let go after 5 s. `listing(t)`: the row's listing (since), nil
-    // while not listed. Lines: what the status line becomes (nil: the end's own words, kept).
+    // The return from the background (returnRenews, renewed): what the browser made again at a return lists
+    // counts as listed afresh, after "shutdown" or "restart" for any return since the goodbye, after "sleep"
+    // only for the return it was read on; for both, a goodbye read within 3 s after a return was read on it
+    // when its session was up before that return (`sessionSince`, here 50 unless said).
+    func renews(off: Bool, _ wentAt: Double, bg: Bool, back: Double, since: Double = 50) -> Bool {
+        P.returnRenews(off: off, wentAt: wentAt, inBackground: bg, returnedAt: back, sessionSince: since)
+    }
+    check("returnRenews: after shutdown or restart, any return since the goodbye",
+          [100, 100.01, 103, 5000].allSatisfy { renews(off: true, 100, bg: false, back: $0) && renews(off: true, 100, bg: true, back: $0) })
+    check("returnRenews: after sleep, a goodbye read in the background with the return within 3 s after it (read as the app ran again)",
+          renews(off: false, 100, bg: true, back: 100.02) && renews(off: false, 100, bg: true, back: 102.99))
+    check("returnRenews: after sleep, a later return keeps the Mac counted as asleep",
+          !renews(off: false, 100, bg: true, back: 103) && !renews(off: false, 100, bg: true, back: 400))
+    check("returnRenews: after sleep, a goodbye read in the foreground: no return renews",
+          !renews(off: false, 100, bg: false, back: 100.02) && !renews(off: false, 100, bg: false, back: 400))
+    check("returnRenews: a goodbye read within 3 s after a return was read on it, sleep or not",
+          [false, true].allSatisfy { off in [false, true].allSatisfy { bg in
+              renews(off: off, 100, bg: bg, back: 99.98) && renews(off: off, 100, bg: bg, back: 97.01) && renews(off: off, 100, bg: bg, back: 100) } })
+    check("returnRenews: a goodbye read 3 s or more after a return was not",
+          [false, true].allSatisfy { off in [false, true].allSatisfy { bg in
+              !renews(off: off, 100, bg: bg, back: 97) && !renews(off: off, 100, bg: bg, back: 10) } })
+    check("returnRenews: a goodbye read just after a return on a session dialled since (or at it) was not read on it, sleep or not",
+          [false, true].allSatisfy { off in [false, true].allSatisfy { bg in
+              !renews(off: off, 100, bg: bg, back: 99.5, since: 99.6) && !renews(off: off, 100, bg: bg, back: 99.5, since: 99.5)
+              && renews(off: off, 100, bg: bg, back: 99.5, since: 99.49) && !renews(off: off, 100, bg: bg, back: 99.5, since: .infinity) } })
+    check("returnRenews: after a return since the goodbye, when its session began does not matter",
+          renews(off: true, 100, bg: false, back: 400, since: .infinity) && renews(off: false, 100, bg: true, back: 101, since: .infinity)
+          && renews(off: true, 100, bg: false, back: 400, since: -.infinity))
+    check("renewed: listed by the browser now running, made at or after the return that renews",
+          P.renewed(listedByBrowser: true, browserMadeAt: 100, renewedFrom: 100) && P.renewed(listedByBrowser: true, browserMadeAt: 130, renewedFrom: 100))
+    check("renewed: not by an older browser, nor through the results kept from the one it replaced, nor without a return",
+          !P.renewed(listedByBrowser: true, browserMadeAt: 99.99, renewedFrom: 100) && !P.renewed(listedByBrowser: false, browserMadeAt: 130, renewedFrom: 100)
+          && !P.renewed(listedByBrowser: true, browserMadeAt: 130, renewedFrom: nil))
+
+    // A model of the reconnect after the Mac's own goodbye read at t = 0, as the glue runs it (reconnectIfListed:
+    // the rows' renewal, reconnectRow, listingStart on a listing seen afresh or renewed, redialRow, waitingLine
+    // while not dialling and the dial's line when dialling; cameForward: the return's renewal by returnRenews,
+    // then listingStart again; lostReconnect: a goodbye read just after a return), every 50 ms; a dial the Mac
+    // answers connects, one it does not is let go after 5 s. `listing(t)`: the row's listing by name (its
+    // sighting, which a rebuild keeps), nil while not listed. `background`: the app's spells in the background,
+    // each return making the browser again; the browser made then lists the row 0.05 s later while the row is
+    // listed and `newBrowserLists`. `inBackground`: the goodbye read in the background; `returnedBefore`: read
+    // that long after a return (its browser made then), on a session up before that return or, with
+    // `dialledSince`, one dialled after it (the reconnect's own dial at the return). Lines: what the status line
+    // becomes (nil: the end's own words, kept).
     struct Gone { var dials: [Double] = []; var connectedAt: Double?; var lines: [(at: Double, line: String)] = [] }
     func afterGoodbye(_ went: String, until: Double, answersFrom: Double = .infinity, listing: (Double) -> Double?,
-                      background: ClosedRange<Double>? = nil) -> Gone {
+                      background: [ClosedRange<Double>] = [], inBackground: Bool = false, returnedBefore: Double? = nil,
+                      dialledSince: Bool = false, newBrowserLists: Bool = true) -> Gone {
         var run = Gone()
         let asleepAt: Double? = went == "sleep" ? 0 : nil, offAt: Double? = went == "off" ? 0 : nil, quitAt: Double? = went == "quit" ? 0 : nil
-        var rowListing: Double?, rowDials = 0, lastDial: Double?, inFlightUntil: Double?, wasBackground = false
+        let wentAt: Double? = went == "sleep" || went == "off" ? 0 : nil
+        var browserMadeAt = -1000.0, renewedFrom: Double?
+        if let before = returnedBefore {
+            browserMadeAt = -before
+            let since = dialledSince ? -before + 0.01 : -1000   // the session's dial: since the return, or long before it
+            if let wentAt, P.returnRenews(off: went == "off", wentAt: wentAt, inBackground: inBackground, returnedAt: -before, sessionSince: since) {
+                renewedFrom = -before
+            }
+        }
+        var rowListing: Double?, rowRenewed = false, rowDials = 0, lastDial: Double?, inFlightUntil: Double?, wasBackground = inBackground
         var t = 0.0
         while t <= until, run.connectedAt == nil {
-            let fg = !(background?.contains(t) ?? false)
+            let fg = !background.contains { $0.contains(t) } && !(inBackground && t == 0)
             if !fg { wasBackground = true }
-            if fg, wasBackground { wasBackground = false; (rowDials, lastDial) = P.listingStart(listedSince: rowListing, asleepAt: asleepAt) }
+            if fg, wasBackground {
+                wasBackground = false
+                browserMadeAt = t
+                if let wentAt, P.returnRenews(off: went == "off", wentAt: wentAt, inBackground: inBackground, returnedAt: t, sessionSince: -.infinity) {
+                    renewedFrom = t
+                }
+                (rowDials, lastDial) = P.listingStart(listedSince: rowListing, asleepAt: asleepAt, renewed: rowRenewed)
+            }
             if let end = inFlightUntil, t >= end { inFlightUntil = nil }
-            let l = listing(t)
-            if inFlightUntil == nil, let l, P.reconnectRow(network: "row", networkSince: l, direct: nil as String?, directSince: nil,
-                                                           networkLeftAt: nil, quitAt: quitAt, offAt: offAt, now: t).take != nil {
-                if rowListing != l { rowListing = l; (rowDials, lastDial) = P.listingStart(listedSince: l, asleepAt: asleepAt) }
-                let line = P.reconnectLine(mac: mini, failed: rowDials, direct: false)
-                if P.redialRow(failed: rowDials, lastDialAt: lastDial, foreground: fg, now: t).dial {
-                    run.dials.append(t); rowDials += 1; lastDial = t
-                    if t >= answersFrom { run.connectedAt = t } else { inFlightUntil = t + 5 }
-                    if run.lines.last?.line != line { run.lines.append((t, line)) }
-                } else if let waiting = P.waitingLine(mac: mini, failed: rowDials, lastDialAt: lastDial, direct: false, asleepAt: asleepAt),
-                          run.lines.last?.line != waiting {
-                    run.lines.append((t, waiting))
+            if let l = listing(t) {
+                let byBrowser = newBrowserLists ? t >= browserMadeAt + 0.05 : browserMadeAt < -100
+                let renewed = P.renewed(listedByBrowser: byBrowser, browserMadeAt: browserMadeAt, renewedFrom: renewedFrom)
+                if inFlightUntil == nil, P.reconnectRow(network: "row", networkSince: l, direct: nil as String?, directSince: nil, networkLeftAt: nil,
+                                                        quitAt: quitAt, offAt: offAt, networkRenewed: renewed, now: t).take != nil {
+                    if rowListing != l || rowRenewed != renewed {
+                        rowListing = l; rowRenewed = renewed
+                        (rowDials, lastDial) = P.listingStart(listedSince: l, asleepAt: asleepAt, renewed: renewed)
+                    }
+                    let line = P.reconnectLine(mac: mini, failed: rowDials, direct: false)
+                    if P.redialRow(failed: rowDials, lastDialAt: lastDial, foreground: fg, now: t).dial {
+                        run.dials.append(t); rowDials += 1; lastDial = t
+                        if t >= answersFrom { run.connectedAt = t } else { inFlightUntil = t + 5 }
+                        if run.lines.last?.line != line { run.lines.append((t, line)) }
+                    } else if let waiting = P.waitingLine(mac: mini, failed: rowDials, lastDialAt: lastDial, direct: false, wentAt: wentAt),
+                              run.lines.last?.line != waiting {
+                        run.lines.append((t, waiting))
+                    }
                 }
             }
             t = (t * 20 + 1).rounded() / 20
         }
         return run
     }
+    func near(_ a: Double?, _ b: Double) -> Bool { a.map { abs($0 - b) < 0.06 } ?? false }
+    let reconnecting = "Reconnecting to Mac mini\u{2026}"
     // Asleep behind a sleep proxy (its record keeps the row listed), never answering: nothing for 20 s and
     // the words of the goodbye meanwhile, then the quiet line and a dial every 30 s, nine in all (the
     // twelve of #69, three of them counted), then stopped.
@@ -322,22 +405,55 @@ func afterSleepPolicy() {
     // registers again: dialled at once, the first line Reconnecting.
     let woke = afterGoodbye("sleep", until: 600, answersFrom: 300, listing: { $0 < 1 ? -1000 : ($0 < 300 ? nil : 300) })
     check("goodbye model (sleep, no proxy): nothing dialled while it sleeps; listed afresh at 300 s, dialled at once and reached",
-          woke.dials == [300] && woke.connectedAt == 300 && woke.lines.map(\.line) == ["Reconnecting to Mac mini\u{2026}"])
+          woke.dials == [300] && woke.connectedAt == 300 && woke.lines.map(\.line) == [reconnecting])
     // The person comes back to Sill within the 20 s (5 to 10 s in the background): the Mac still counts as
     // asleep, its first dial at 20 s; back after it (30 to 200 s away): dialled at once, as #69's return does.
     check("goodbye model (sleep): a return within 20 s keeps the wait",
-          afterGoodbye("sleep", until: 60, listing: { _ in -1000 }, background: 5...10).dials.first == 20)
-    let late = afterGoodbye("sleep", until: 400, listing: { _ in -1000 }, background: 30...200)
+          afterGoodbye("sleep", until: 60, listing: { _ in -1000 }, background: [5...10]).dials.first == 20)
+    let late = afterGoodbye("sleep", until: 400, listing: { _ in -1000 }, background: [30...200])
     check("goodbye model (sleep): a return after it dials at once, then every 30 s",
-          late.dials.first == 20 && late.dials.dropFirst().first.map { abs($0 - 200.05) < 0.06 } == true
-          && late.dials.dropFirst(2).first.map { abs($0 - 230.05) < 0.06 } == true)
+          late.dials.first == 20 && near(late.dials.dropFirst().first, 200.05) && near(late.dials.dropFirst(2).first, 230.05))
+    // Read only on the return (issue #105's review): the goodbye waited in the connection while the app was
+    // suspended, the Mac awake again since and still listed by name. Read in the background just before the
+    // return (0.05 s), or just after it (0.05 s): the row the browser made at the return lists is dialled at
+    // once, not 20 s later.
+    let readBefore = afterGoodbye("sleep", until: 60, answersFrom: 0, listing: { _ in -1000 }, inBackground: true)
+    check("goodbye model (sleep read in the background as the app ran again): the Mac listed by the new browser, dialled at once",
+          near(readBefore.dials.first, 0.1) && near(readBefore.connectedAt, 0.1))
+    let readAfter = afterGoodbye("sleep", until: 60, answersFrom: 0, listing: { _ in -1000 }, returnedBefore: 0.05)
+    check("goodbye model (sleep read just after the return): dialled at once", readAfter.dials == [0] && readAfter.connectedAt == 0)
+    check("goodbye model (sleep read just after the return): only the old browser's kept row, never dialled while it stays (the Mac asleep)",
+          afterGoodbye("sleep", until: 60, listing: { $0 < 3 ? -1000 : nil }, returnedBefore: 0.05, newBrowserLists: false).dials.isEmpty)
+    check("goodbye model (sleep read in the background long before the return): the return keeps the Mac counted as asleep",
+          afterGoodbye("sleep", until: 60, listing: { _ in -1000 }, background: [0...10], inBackground: true).dials.first == 20)
+    check("goodbye model (sleep just after the return, on a session dialled since): the Mac's now, counted asleep, its first dial at 20 s",
+          afterGoodbye("sleep", until: 60, listing: { _ in -1000 }, returnedBefore: 0.05, dialledSince: true).dials.first == 20)
     // Shut down or restarting: the registration lingers a second, then goes; nothing is dialled until the
     // Mac is listed afresh (120 s: back, and Sill open on it), then at once.
     let backUp = afterGoodbye("off", until: 600, answersFrom: 120, listing: { $0 < 1 ? -1000 : ($0 < 120 ? nil : 120) })
     check("goodbye model (shut down or restart): nothing until listed afresh, then dialled at once",
           backUp.dials == [120] && backUp.connectedAt == 120)
-    check("goodbye model (shut down or restart): a row that never leaves is never dialled, and the words stay",
-          afterGoodbye("off", until: 3600, listing: { _ in -1000 }).dials.isEmpty && afterGoodbye("off", until: 3600, listing: { _ in -1000 }).lines.isEmpty)
+    // A device that missed the registration's removal: the row never leaves, its listing as old as ever.
+    let missed = afterGoodbye("off", until: 3600, listing: { _ in -1000 })
+    check("goodbye model (shut down or restart, the removal missed): first dialled 10 minutes after the goodbye, the words until then",
+          missed.dials.first == 600 && missed.lines.first.map { $0.at == 600 && $0.line == reconnecting } == true)
+    check("goodbye model (shut down or restart, the removal missed): the Mac back meanwhile is reached at 600 s",
+          afterGoodbye("off", until: 3600, answersFrom: 90, listing: { _ in -1000 }).connectedAt == 600)
+    let cameBack = afterGoodbye("off", until: 3600, answersFrom: 90, listing: { _ in -1000 }, background: [30...120])
+    check("goodbye model (shut down or restart, the removal missed): the person back at 120 s, the Mac too: dialled at once by the new browser",
+          near(cameBack.dials.first, 120.1) && near(cameBack.connectedAt, 120.1) && cameBack.lines.map(\.line) == [reconnecting])
+    let awayAtTen = afterGoodbye("off", until: 800, listing: { _ in -1000 }, background: [590...700])
+    check("goodbye model (shut down or restart): in the background at its 10 minutes, no dial and the words until the return",
+          near(awayAtTen.dials.first, 700.05) && awayAtTen.lines.first.map { abs($0.at - 700.05) < 0.06 && $0.line == reconnecting } == true)
+    check("goodbye model (shut down or restart read just after the return): the Mac back long ago, dialled at once",
+          afterGoodbye("off", until: 60, answersFrom: 0, listing: { _ in -1000 }, returnedBefore: 0.05).connectedAt == 0)
+    check("goodbye model (shut down or restart read as the app ran again): dialled once the new browser lists it",
+          near(afterGoodbye("off", until: 60, answersFrom: 0, listing: { _ in -1000 }, inBackground: true).connectedAt, 0.1))
+    // The reconnect's own dial at the return reached a Mac that says it is restarting (a Mac going down then, or
+    // one whose door refuses each dial so): not read on the return, so its row is held, not dialled at once again.
+    let againAfterReturn = afterGoodbye("off", until: 700, listing: { _ in -1000 }, returnedBefore: 0.05, dialledSince: true)
+    check("goodbye model (shut down or restart just after the return, on a session dialled since): held, its first dial at 10 minutes",
+          againAfterReturn.dials.first == 600 && againAfterReturn.lines.first.map { $0.at == 600 && $0.line == reconnecting } == true)
     // Sill quit: the registration lingers; still listed after 3 s (Sill relaunched within the second), dialled then.
     check("goodbye model (quit): a row listed through the goodbye is dialled at 3 s, not before",
           afterGoodbye("quit", until: 60, answersFrom: 0, listing: { _ in -1000 }).connectedAt == 3)

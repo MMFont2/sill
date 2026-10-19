@@ -18,10 +18,11 @@ import StreamProtocol
 /// The Mac's own going (issue #105): "sleep", "shutdown" and "restart" are notices too (said whatever
 /// the session's state, a remote dial's before its first window list included), in this build's
 /// words and always with a reconnect, which waits as `went` says (DiscoveryPolicy: the Mac counted as
-/// asleep, or a Mac going down left alone until it is listed afresh), and through the remote door
-/// only for a session that came that way: at home such a dial would only replace the words while
-/// the Mac is away, and the Mac's row brings it back. A device from before them shows the Mac's
-/// `message` ("‹Mac› is going to sleep.") and follows its `reconnect`.
+/// asleep, or a Mac going down left alone until it is listed afresh, the app's return from the
+/// background, or ten minutes), and through the remote door only for a session that came that way: at
+/// home such a dial would only replace the words while the Mac is away, and the Mac's row brings it
+/// back. A device from before them shows the Mac's `message` ("‹Mac› is going to sleep.") and follows
+/// its `reconnect`.
 enum GoodbyePolicy {
     struct Outcome: Equatable {
         /// The connect screen's status line.
@@ -43,7 +44,8 @@ enum GoodbyePolicy {
 
     /// How the Mac said it went: Sill quit (a Mac row listed since before the goodbye is the
     /// registration that is going), the Mac is going to sleep (the Mac counted as asleep), or it is
-    /// shutting down or restarting (a row listed since before it left alone until listed afresh).
+    /// shutting down or restarting (a row listed since before it left alone until listed afresh, the
+    /// app's return from the background, or ten minutes).
     enum Went: Equatable { case quit, asleep, off }
 
     /// The longest message shown, in characters (SafeText.label).

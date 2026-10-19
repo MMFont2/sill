@@ -505,6 +505,10 @@ final class StreamClient: ObservableObject {
     /// The app is not in the background (UIApplication's notifications): the automatic reconnect dials
     /// a listed row, and a failed browser is made again, only then (issue #69). Main thread.
     private(set) var appInForeground = UIApplication.shared.applicationState != .background
+    /// The app's last return from the background (`cameForward`, systemUptime), when the browsers were
+    /// made again: a session that ends just after it may have ended on a goodbye that waited in its
+    /// connection while the app was suspended (DiscoveryPolicy.returnRenews). Main thread.
+    private(set) var returnedAt: Double?
     #if DEBUG
     /// `-SillBrowserFail N`: each of the first N network browsers is reported failed with
     /// kDNSServiceErr_DefunctConnection (-65569) half a second after it starts, as iOS reports a
@@ -706,6 +710,10 @@ final class StreamClient: ObservableObject {
         var row: HomeRow? = nil
         /// The endpoint dialed (the DEBUG move and path tests start from it).
         var endpoint: NWEndpoint? = nil
+        /// When it was dialled (systemUptime; a remote one's when its dial won): a goodbye on it read
+        /// just after a return from the background was read on that return only if the session was up
+        /// before it (DiscoveryPolicy.returnRenews' `sessionSince`). A move keeps it.
+        var startedAt = ProcessInfo.processInfo.systemUptime
     }
     var session: Session?
 
@@ -741,16 +749,30 @@ final class StreamClient: ObservableObject {
         /// How the Mac said it went (GoodbyePolicy.Went), at `lostAt`: `quit`, a row listed since
         /// before is the Mac's registration that is going, left alone for DiscoveryPolicy.quitWait
         /// (`reconnectRow`); `asleep`, the Mac counted as asleep (`listingStart`, and no remote dial
-        /// before `asleepWait`); `off`, a row listed since before never dialled (`reconnectRow`'s
+        /// before `asleepWait`); `off`, a row listed since before left alone until it is listed
+        /// afresh, the app comes back from the background or `offHold` has passed (`reconnectRow`'s
         /// `offAt`). Nil for every other end.
         var went: GoodbyePolicy.Went?
         /// When the Mac said it is going to sleep: `lostAt` after a goodbye `sleep`, else nil.
         var asleepAt: Double? { went == .asleep ? lostAt : nil }
+        /// When the Mac said it went: `lostAt` after a goodbye `sleep`, `shutdown` or `restart`, else
+        /// nil (DiscoveryPolicy.waitingLine: its words stay until the first dial).
+        var wentAt: Double? { went == .asleep || went == .off ? lostAt : nil }
+        /// The session ended while the app was in the background (`appInForeground` false): its
+        /// goodbye may have waited in the connection while the app was suspended
+        /// (DiscoveryPolicy.returnRenews).
+        var endedInBackground = false
+        /// The return from the background from which what a browser made then (or later) lists itself
+        /// counts as listed afresh for the goodbye's rules (DiscoveryPolicy.returnRenews, `renewed`):
+        /// set at the return (`cameForward`), or as the session ends just after one. Nil: no return
+        /// counts.
+        var renewedFrom: Double?
         /// The listing of the Mac's row the reconnect dials (its `sightings.since`, `directSince` for a
-        /// Direct row), the dials of it so far, none of which connected, and when the last started
-        /// (DiscoveryPolicy.redialRow, issue #69). A listing seen afresh, and the app's return from
-        /// the background, start again.
+        /// Direct row), whether it is renewed so (`rowRenewed`), the dials of it so far, none of which
+        /// connected, and when the last started (DiscoveryPolicy.redialRow, issue #69). A listing seen
+        /// afresh or renewed, and the app's return from the background, start again.
         var rowListing: Double?
+        var rowRenewed = false
         var rowDials = 0
         var lastRowDialAt: Double?
     }
@@ -1032,21 +1054,44 @@ final class StreamClient: ObservableObject {
     /// Back from the background (issue #69): the network browser is made again, and the nearby one if it runs
     /// (DiscoveryPolicy.rebuildBrowser: iOS may have made their connection to mDNSResponder defunct while the
     /// app was suspended, and said nothing yet), and the automatic reconnect's count of dials starts again:
-    /// the person is back, so a listed row is dialled at once. Only after the app was seen going to the
-    /// background. Main thread.
+    /// the person is back, so a listed row is dialled at once. After the Mac said it is shutting down or
+    /// restarting, and after a "sleep" goodbye read as the app ran again, what the browsers made now list
+    /// counts as listed afresh (DiscoveryPolicy.returnRenews: `renewedFrom`, issue #105). Only after the app
+    /// was seen going to the background. Main thread.
     private func cameForward() {
         let wasInBackground = !appInForeground
         appInForeground = true
         guard browsing, wasInBackground else { return }
+        let now = ProcessInfo.processInfo.systemUptime   // before the browsers are made: each was made at or after it
+        returnedAt = now
         rebuildIfDue(.network, cameForward: true)
         if nearbyBrowser != nil { rebuildIfDue(.nearby, cameForward: true) }
         if var r = reconnect {
+            // The session ended before this return (`sessionSince` matters only for a goodbye read after it).
+            if let wentAt = r.wentAt,
+               DiscoveryPolicy.returnRenews(off: r.went == .off, wentAt: wentAt, inBackground: r.endedInBackground, returnedAt: now,
+                                            sessionSince: -.infinity) {
+                r.renewedFrom = now
+                #if DEBUG
+                print("reconnect: back from the background since \(r.name) said it \(r.went == .off ? "is shutting down or restarting" : "is going to sleep"): "
+                      + "what the browsers made now list counts as listed afresh")
+                #endif
+            }
             // Where a fresh look at its listing would start it: none, or, for a Mac that said it is
             // going to sleep while it was listed, asleep (DiscoveryPolicy.listingStart).
-            (r.rowDials, r.lastRowDialAt) = DiscoveryPolicy.listingStart(listedSince: r.rowListing, asleepAt: r.asleepAt)
+            (r.rowDials, r.lastRowDialAt) = DiscoveryPolicy.listingStart(listedSince: r.rowListing, asleepAt: r.asleepAt, renewed: r.rowRenewed)
             reconnect = r
         }
         discoveryChanged()
+    }
+
+    /// Whether `mac`'s row counts as renewed for the reconnect's goodbye (DiscoveryPolicy.renewed): the
+    /// browser now running lists it itself, not only through the results of the one it replaced, and
+    /// was made at or after `renewedFrom`. Main thread.
+    func listedAfreshByBrowser(_ mac: FoundMac, renewedFrom: Double?) -> Bool {
+        let life = mac.direct ? nearbyLife : networkLife
+        return DiscoveryPolicy.renewed(listedByBrowser: life.fresh.contains { Self.serviceName(of: $0) == mac.name },
+                                       browserMadeAt: life.startedAt, renewedFrom: renewedFrom)
     }
 
     /// A browser's state. A failed one, of either kind, is made again after DiscoveryPolicy's back-off

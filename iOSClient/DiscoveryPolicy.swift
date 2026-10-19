@@ -50,6 +50,12 @@ enum DiscoveryPolicy {
     /// counts as usual: a Sill relaunched within that second renews the record, so its row never
     /// leaves, and a goodbye packet can be lost.
     static let quitWait = 3.0
+    /// After the Mac said it is shutting down or restarting (goodbye `shutdown` or `restart`), a row
+    /// listed since before the goodbye is left alone at most this long (`reconnectRow`'s `offAt`):
+    /// ten minutes, longer than a Mac takes to restart and open Sill again. A Mac back sooner is
+    /// dialled as soon as its row is listed afresh, the usual way back; this bounds the wait of a
+    /// device that missed the old registration's removal, whose row never left.
+    static let offHold = 600.0
     /// A session over AWDL moves to the network once the network has listed the same Mac this long
     /// without a break (a blink restarts it).
     static let moveAfter = 2.0
@@ -308,17 +314,27 @@ enum DiscoveryPolicy {
     /// quit Sill…" stay instead of a dial to a Mac that is going. A row listed again since the quit
     /// (Sill is back) is taken by the rules above.
     /// After a goodbye `shutdown` or `restart` (`offAt`, the moment the session ended), a row listed
-    /// since then or before is never taken: the registration of a Sill that quit with the goodbye,
-    /// on its way out. Only a row listed afresh since (the Mac back, and Sill open on it again) is
-    /// taken, by the rules above; until then the words "‹Mac› is restarting…" stay, and nothing is
-    /// dialled.
+    /// since then or before is the registration of a Sill that quit with the goodbye, on its way out:
+    /// it is not taken, and the words "‹Mac› is restarting…" stay, until the first of: the row listed
+    /// afresh (the Mac back, and Sill open on it again: its sighting begins after the goodbye); the
+    /// row listed by a browser made again at a return from the background that counts for this
+    /// goodbye (`networkRenewed`, `directRenewed`: `returnRenews` and `renewed`), which lists the
+    /// network as it is now; or `offHold` after the goodbye, when it is looked at again. Then it is
+    /// taken by the rules above. A device that missed the registration's removal (suspended within the
+    /// second it outlives the goodbye, a goodbye read only on the return from the background, an
+    /// mDNS goodbye lost) keeps the row's old sighting: without the last two the Mac back on it would
+    /// never be dialled.
     static func reconnectRow<Row>(network: Row?, networkSince: Double? = nil, direct: Row?, directSince: Double?, networkLeftAt: Double?,
-                                  quitAt: Double? = nil, offAt: Double? = nil, now: Double) -> (take: Row?, recheckAt: Double?) {
-        if let offAt {
-            let fresh = { (since: Double?) -> Bool in since.map { $0 > offAt } ?? false }
-            return reconnectRow(network: fresh(networkSince) ? network : nil, networkSince: networkSince,
-                                direct: fresh(directSince) ? direct : nil, directSince: directSince,
-                                networkLeftAt: networkLeftAt, now: now)
+                                  quitAt: Double? = nil, offAt: Double? = nil, networkRenewed: Bool = false, directRenewed: Bool = false,
+                                  now: Double) -> (take: Row?, recheckAt: Double?) {
+        if let offAt, now < offAt + offHold {
+            let fresh = { (since: Double?, renewed: Bool) -> Bool in renewed || (since.map { $0 > offAt } ?? false) }
+            let net = fresh(networkSince, networkRenewed), dir = fresh(directSince, directRenewed)
+            let choice = reconnectRow(network: net ? network : nil, networkSince: networkSince, direct: dir ? direct : nil,
+                                      directSince: directSince, networkLeftAt: networkLeftAt, now: now)
+            let heldBack = (network != nil && !net) || (direct != nil && !dir)
+            guard choice.take == nil, heldBack else { return choice }
+            return (nil, min(choice.recheckAt ?? .infinity, offAt + offHold))
         }
         if let quitAt, now < quitAt + quitWait {
             let fresh = { (since: Double?) -> Bool in since.map { $0 > quitAt } ?? false }
@@ -775,8 +791,16 @@ enum DiscoveryPolicy {
     // proxy may wake a Mac someone put to sleep. So that listing starts where the dials would have
     // got to: asleep, its first dial `asleepWait` after the goodbye, then every 30 s, `reconnectDials`
     // in all, with the words those dials have. A row listed afresh since is the Mac awake again, and
-    // is dialled at once. (After "shutdown" or "restart" nothing listed before is dialled at all:
-    // `reconnectRow`'s `offAt`.)
+    // is dialled at once. (After "shutdown" or "restart" a row listed before is left alone instead,
+    // for `offHold` at most: `reconnectRow`'s `offAt`.)
+    //
+    // The app's return from the background (issue #105's review, 2026-10-20). A goodbye can wait in
+    // the connection while the app is suspended and be read only as it runs again, so its moment, the
+    // read, is the return's, and the Mac may have said it long before: what the browser made again at
+    // that return lists is the network as it is now. So a row that browser lists counts as listed
+    // afresh (`returnRenews`, `renewed`): after "sleep" for the return the goodbye was read on (on a
+    // session from before it), after "shutdown" or "restart" for any return since the goodbye. A row
+    // only the old browser's results list, kept beside the new one while it settles, does not.
 
     /// How long after the Mac said it is going to sleep its row as listed then is first dialled
     /// (`listingStart`), and after it said it is going to sleep, shutting down or restarting its
@@ -786,23 +810,55 @@ enum DiscoveryPolicy {
 
     /// The dials a listing of the Mac's row starts with (`redialRow`'s `failed` and `lastDialAt`):
     /// none, unless the Mac said it is going to sleep (`asleepAt`, the moment the session ended)
-    /// while that row was listed (`listedSince` at or before it, or unknown): then `reconnectQuietAfter`
-    /// dials that did not connect, the last at `asleepAt`, so its first dial comes `asleepWait` later.
-    /// The app's return from the background starts the count here again (StreamClient.cameForward):
-    /// a listing counted asleep stays so, and once `asleepWait` has passed the return dials at once,
-    /// as #69's return does.
-    static func listingStart(listedSince: Double?, asleepAt: Double?) -> (failed: Int, lastDialAt: Double?) {
-        guard let asleepAt, (listedSince ?? -.infinity) <= asleepAt else { return (0, nil) }
+    /// while that row was listed (`listedSince` at or before it, or unknown) and it is not `renewed`
+    /// (listed by a browser made again at a return that counts for the goodbye, `returnRenews`):
+    /// then `reconnectQuietAfter` dials that did not connect, the last at `asleepAt`, so its first
+    /// dial comes `asleepWait` later. The app's return from the background starts the count here
+    /// again (StreamClient.cameForward): a listing counted asleep stays so, and once `asleepWait` has
+    /// passed the return dials at once, as #69's return does.
+    static func listingStart(listedSince: Double?, asleepAt: Double?, renewed: Bool = false) -> (failed: Int, lastDialAt: Double?) {
+        guard let asleepAt, !renewed, (listedSince ?? -.infinity) <= asleepAt else { return (0, nil) }
         return (reconnectQuietAfter, asleepAt)
     }
 
     /// The status line while the automatic reconnect waits on a listed row it does not dial now:
-    /// `reconnectLine`'s for the dials so far; nil, which keeps the line the session's end left
-    /// ("‹Mac› went to sleep. This ‹iPad› reconnects when it wakes."), while a listing counted asleep
-    /// (`listingStart`) has had no dial since the goodbye (`lastDialAt` still `asleepAt`).
-    static func waitingLine(mac: String, failed: Int, lastDialAt: Double?, direct: Bool, asleepAt: Double?) -> String? {
-        if let asleepAt, lastDialAt == asleepAt { return nil }
+    /// `reconnectLine`'s for the dials so far; nil, which keeps the status line as it is (the words
+    /// the session's end left: "‹Mac› went to sleep. This ‹iPad› reconnects when it wakes.", "‹Mac›
+    /// is restarting…"), while no dial of the row has gone out since the Mac said it went (`wentAt`,
+    /// the moment the session ended after a goodbye "sleep", "shutdown" or "restart": `lastDialAt`
+    /// nil, or at or before it, as a listing counted asleep starts with its last dial at the goodbye,
+    /// `listingStart`).
+    static func waitingLine(mac: String, failed: Int, lastDialAt: Double?, direct: Bool, wentAt: Double?) -> String? {
+        if let wentAt, (lastDialAt ?? -.infinity) <= wentAt { return nil }
         return reconnectLine(mac: mac, failed: failed, direct: direct)
+    }
+
+    /// Whether the app's return from the background at `returnedAt` makes what the browser made again
+    /// then lists count as listed afresh for the goodbye that ended the session at `wentAt`
+    /// (`reconnectRow`'s `networkRenewed` and `directRenewed`, `listingStart`'s `renewed`). After
+    /// "shutdown" or "restart" (`off`), any return since the goodbye: the person is back, and that
+    /// browser lists the network as it is now, not the registration on its way out. After "sleep",
+    /// only the return the goodbye was read on: read in the background (`inBackground`) with the
+    /// return within `rebuildSettle` after it, as when it waited in the connection while the app was
+    /// suspended and was read as it ran again; a later return keeps the Mac counted as asleep (any
+    /// browser lists a sleep proxy's record) and dials at once only once `asleepWait` has passed
+    /// (`listingStart`). For both, a goodbye read within `rebuildSettle` after a return (`returnedAt`
+    /// at or before `wentAt`) was read on it, when its session was up before that return
+    /// (`sessionSince`, when the session was dialled): one dialled since, the reconnect's own dial at
+    /// the return say, cannot have kept a goodbye from before it, and its goodbye is the Mac's now
+    /// (else a Mac that refuses each dial so would be dialled again at once until the 3 s are up).
+    static func returnRenews(off: Bool, wentAt: Double, inBackground: Bool, returnedAt: Double, sessionSince: Double) -> Bool {
+        if returnedAt <= wentAt { return sessionSince < returnedAt && wentAt - returnedAt < rebuildSettle }
+        return off || (inBackground && returnedAt - wentAt < rebuildSettle)
+    }
+
+    /// Whether a listed row counts as renewed for a goodbye's rules: the browser now running lists it
+    /// itself (`listedByBrowser`, not only through the results of the browser it replaced, kept beside
+    /// it while it settles) and was made at or after the return that renews the listings
+    /// (`renewedFrom`, `returnRenews`; nil: none does).
+    static func renewed(listedByBrowser: Bool, browserMadeAt: Double, renewedFrom: Double?) -> Bool {
+        guard listedByBrowser, let renewedFrom else { return false }
+        return browserMadeAt >= renewedFrom
     }
 
     /// The soonest the automatic reconnect may first dial a lost saved Mac's addresses
