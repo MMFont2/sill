@@ -343,6 +343,14 @@ touch", after the one that starts "Type with":
 • Copy text on your Mac and paste it on your iPhone or iPad. To paste on your Mac what you copied on your device, tap Paste in Sill, then press ⌘V on your Mac. Copies a password manager marks as concealed stay on your Mac.
 ```
 
+**For the next version too** (the Mac's displays, issue #91, docs/display-stepping-plan.md: it ships
+with the next submission of both apps, and needs Sill for Mac from the same release): add this bullet
+to "Made for touch", after the one that starts "Switch windows from":
+
+```text
+• With more than one display on your Mac, the Desktop button says which one you see, and a tap moves to the next.
+```
+
 The source is public under the Apache License 2.0 (since 2026-09-26), so the
 listing may call Sill open source, as the live description does and the last
 bullet of "Private" does.
@@ -419,6 +427,8 @@ Larger Picture, in Settings on iPhone: held upright, a window’s picture takes 
 With a keyboard attached to your iPhone or iPad, what you type goes to your Mac as soon as its picture shows, Esc included, without the Keyboard button. Two fingers on a trackpad, or a mouse’s scroll wheel, now scroll the window under the pointer.
 
 Fixed: after Sill sat in the background for hours, it could stop finding your Mac until you closed and reopened it. Sill now looks again when you come back, keeps trying for a few minutes while your Mac doesn’t answer (when it’s asleep, say), and connects when it does.
+
+With more than one display on your Mac, the Desktop button says which one you see, such as 1 of 2, and a tap while the Desktop shows moves to the next. It needs Sill for Mac from the same release, at getsill.app.
 ```
 
 Esc and scrolling with a trackpad or a mouse showed on the iPad through Universal Control on 2026-10-15
@@ -760,6 +770,9 @@ Safe:
 - With those words in (2026-10-15, after Noah's Universal Control test), the
   description block as it stands here, Larger Picture's sentence included:
   3,044 characters; its keyboard paragraph of the next What's New 247.
+- With the Mac's displays (issue #91; the bullet for "Made for touch" and the next What's New's last
+  paragraph), the same way: the description block with that bullet 3,158 characters, with the
+  clipboard's bullet too 3,381; the paragraph 212; the rest unchanged.
 - The encryption key, now in `iOSClient/Info.plist`: Release builds of this
   branch for the simulator and for a device each have
   `"ITSAppUsesNonExemptEncryption" => false` in the built Sill.app's

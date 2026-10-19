@@ -128,6 +128,7 @@ swift run -c release SillHost --direct-wireless      # also over peer-to-peer Wi
 swift run -c release SillHost --no-clipboard         # share nothing of the clipboard with devices (on by default, as in Sill.app)
 swift run -c release SillHost --synthetic            # the Desktop streams a test pattern; no Screen Recording needed
 SILL_TEST_PATTERN=picture:/path/to.jpg swift run -c release SillHost --synthetic   # the Desktop a still picture instead (TEST ONLY)
+SILL_TEST_DISPLAYS=2 swift run -c release SillHost --synthetic   # the Desktop two test patterns, as a Mac with two displays (TEST ONLY; 2 to 4, N@S: the last goes after S s)
 swift run -c release SillHost --remote               # the remote door for this run, on any free port (--remote=PORT)
 swift run -c release SillHost --remote --internet    # also admit paired devices from the internet
 swift run -c release SillHost --print-reachability   # the addresses a device would get away from home, then exit
@@ -384,6 +385,41 @@ sequences that fit a window and put it back (over `WindowRestore.Access`, which
 `Tests/checks/window-restore` against a stand-in Mac;
 docs/restore-window-frames-plan.md has the reasons, and The restore probe
 (below) checks it against a real window.
+
+## The Desktop on a Mac with several displays
+
+The Desktop shows one of the Mac's displays at a time (issue #91;
+docs/display-stepping-plan.md). Every window list carries the Mac's displays
+(`displays`: each one's ID, its name as macOS gives it, its size in points and
+whether it is the main one) and the one the Desktop shows (`desktopDisplay`),
+the main display first, then those to its right and then those to its left,
+each left to right; Sill's own virtual display, which only a staged window
+has, is never among them. A device's Desktop pick may name one
+(`{"desktop":{"display":N}}` in kind 6): Sill streams that display's desktop,
+keeps it for the Desktop through restarts and window picks, and every device
+sees the same one; a pick that names none (every device before this) gets the
+main display, as does one naming a display that is not connected ("Desktop:
+display 3 is not connected; streaming Built-in Retina Display (1 of 2), the
+main display."). A display that goes away while the Desktop shows it gives way
+to the main one at once ("Desktop: LG UltraFine is gone; streaming Built-in
+Retina Display, the main display, instead."). With two or more displays the
+stream's line says which ("Streaming the whole desktop of LG UltraFine (2 of 2)
+at …"); with one it is as it always was.
+
+On the device, with two or more displays the Desktop button's label says which
+one the Desktop shows, "1 of 2", where it said "Desktop", in every bar;
+VoiceOver hears "Desktop, Built-in Retina Display, 1 of 2" and what a tap does.
+While the Desktop streams, a tap moves to the next display, from the last back
+to the first; from a window, it shows the display the label names. A tap's
+display shows at once and stands until the Mac's list names it, so two quick
+taps step twice. With one display, or a Mac from before, the button and its
+pick are exactly as they were. `Sources/SillHost/DesktopDisplays.swift` (the
+Mac's rule) and `iOSClient/DisplayStepping.swift` (the device's) are checked
+together in `Tests/checks/display-stepping`. TEST ONLY: `SILL_TEST_DISPLAYS=2`
+(to 4) gives a `--synthetic` host that many test patterns as its displays,
+each its own size and tint, and `2@20` takes the last away 20 s after the
+start, as an unplugged display; `sillclient.py … desktop:2` and
+`--pick=desktop:2@T` pick one, and its window list lines show the displays.
 
 ## Trackpad gestures
 
@@ -799,7 +835,7 @@ iOS app's build for the simulator.
 
 ### The test client and the relay
 
-`Scripts/sillclient.py PORT [seconds] [desktop|none|window:ID] [flags…]` speaks
+`Scripts/sillclient.py PORT [seconds] [desktop|desktop:DISPLAY|none|window:ID] [flags…]` speaks
 the wire format as a device would, and prints what the host sends. For
 example, a device's settings change, checked against the host's answer:
 
@@ -964,7 +1000,11 @@ simulator:
   `run.sh UDID shot <pose> FILE.png` (TEST ONLY: Device Hub's own events,
   posted inside the simulator; its README).
 - `-SillLive 1`: a real client inside that frame. Otherwise the Mac is a mock,
-  and `-SillActive none|desktop|<windowID>` picks what it streams.
+  and `-SillActive none|desktop|<windowID>` picks what it streams;
+  `-SillDisplays N` gives the mock Mac N displays, so the Desktop button says
+  "1 of N" (1: one display, the button as it always was). With `-SillLive 1`,
+  the `-SillInputScript` step `desktop` taps the Desktop button, and the
+  console's `desktop button: …` line follows its face.
 - `-SillDrawer 1`, `-SillSettings 1` (with `-SillSettingsCase …` for the
   settings of the mock Mac) and `-SillConnectCase …`: the drawer, the Settings
   panel or the connect screen in a given state.

@@ -116,13 +116,18 @@ Sill has layouts of its own.
   place when Sill stops showing it: you pick another window or the Desktop,
   your last device disconnects, or you quit Sill. If you moved it on your Mac
   meanwhile, it keeps its new place.
+- **Several displays**: the Desktop shows one of your Mac's displays at a
+  time, the one with the menu bar to begin with. When your Mac has more than
+  one, the Desktop button says which one you see, 1 of 2, and a tap while the
+  Desktop shows moves to the next. Every device connected sees the same one,
+  and if that display goes away, Sill shows the one with the menu bar.
 - **The virtual display** (off by default) moves a window you stream onto a
   display of its own on your Mac, so it keeps updating when other windows
   cover it. It uses a private macOS API, which is one reason Sill for Mac comes
   from the website and not from the Mac App Store.
 
-Good to know: Sill shows one window, or the whole desktop, at a time, and it
-does not play sound from your Mac. The clipboard carries text only, up to 256
+Good to know: Sill shows one window, or the whole desktop of one display, at a
+time, and it does not play sound from your Mac. The clipboard carries text only, up to 256
 KB at a time, and only between apps that both have it. Your Mac needs to be
 awake, with Sill open. Sill may not be able to wake it. After a restart Sill
 opens only once someone logs in, with Launch at Login on. Only the iPhones and

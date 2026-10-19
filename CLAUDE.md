@@ -4896,8 +4896,11 @@ good.
 - `Sources/StreamProtocol/StreamMessage.swift` — 14-byte header + payload framing,
   message kinds in both directions, HEVC parameter set encoding. Shared by both
   sides. Change it in one place. `Switcher.swift` — the catalog types
-  (`WindowList`, with the host's per-launch `launchID`; `WindowInfo`,
-  `AppInfo`, `StreamSource`) and image blob framing.
+  (`WindowList`, with the host's per-launch `launchID` and the Mac's
+  `displays` and `desktopDisplay`; `WindowInfo`, `AppInfo`, `StreamSource`;
+  `DisplayInfo`, one of the Mac's displays in pull request #66's shape;
+  `SourcePick`, kind 6's pick with the Desktop's display inside its object,
+  issue #91) and image blob framing.
   `HostSettings.swift` — the host settings a device sees and changes (kinds 16
   and 17): `StreamSettings`, `RunningStream`, `HostSettingsState`,
   `HostSettingsChange`, `SettingsChoices` (the Mac menu's values) and
@@ -4969,10 +4972,17 @@ good.
   set, `HostConfig` ↔ wire), `HostLog` (the print shadow, the app's ring and
   log file),
   `WindowCatalog` (polls windows and thumbnails only while a client is
-  connected; icons; installed apps in the background),
+  connected; icons; installed apps in the background; the Mac's displays in
+  DesktopDisplays' order, named by NSScreen, `desktopDisplays`),
+  `DesktopDisplays` (which of the Mac's displays the Desktop shows, issue #91:
+  the order a device steps through them, main first, never Sill's own virtual
+  display; the display a pick streams; the window list's entries; the lines;
+  the TEST ONLY test displays, SILL_TEST_DISPLAYS; pure,
+  `Tests/checks/display-stepping`),
   `WindowCapture` (ScreenCaptureKit), `SyntheticCapture` (test pattern for
   `--synthetic`; SILL_TEST_PATTERN=noise adds a square of noise,
-  SILL_TEST_PATTERN=picture:<path> shows a still picture instead), `HEVCEncoder` (VideoToolbox with one frame inside, a
+  SILL_TEST_PATTERN=picture:<path> shows a still picture instead; with
+  SILL_TEST_DISPLAYS a tinted pattern for each test display but the first), `HEVCEncoder` (VideoToolbox with one frame inside, a
   one-slot mailbox behind it and a hang watchdog; hardware or software; says
   whether a stalled frame came back; gives a stream whose session settled in
   the slow state a new one), `EncoderSlowState` (when that is, and whether the
@@ -5194,7 +5204,9 @@ good.
   the tool and the background. Sourced, it only defines its functions.
   `Scripts/sillclient.py` is the wire-format test client
   (timed `--set=K=V[,K=V]@T` kind 17 changes with tokens 1, 2, 3…,
-  `--raw17=JSON@T`, `--pick=none|desktop|window:ID@T`, `--stats`,
+  `--raw17=JSON@T`, `--pick=none|desktop|desktop:DISPLAY|window:ID@T` (the
+  Desktop of one display, issue #91; each window list line shows the host's
+  `displays` and `desktopDisplay`), `--stats`,
   `--expect=K=V[,…]` against the last kind 16, which it prints one per line,
   and each second's frames with their kB (the encoder's output);
   `--host`, `--device`, `--big-payload`, `--flood`, `--stop-ping@T`,
@@ -5365,7 +5377,12 @@ good.
   the keyboard, carrying out `HardwareKeyboardPolicy`; `HardwareKeyboardMonitor`,
   GameController's keyboard), `HardwareKeyboardPolicy` (when the stream's input
   view holds the keyboard for a hardware keyboard and when it is the person's
-  own; pure, `Tests/checks/hardware-keyboard`; pbxproj AC01/FC01), `KeyChords`
+  own; pure, `Tests/checks/hardware-keyboard`; pbxproj AC01/FC01),
+  `DisplayStepping` (the Desktop button on a Mac with several displays, issue
+  #91: the steps, the display shown, what a tap picks, the button's face and
+  VoiceOver's words, a pick that stands; today's button with fewer than two;
+  pure, `Tests/checks/display-stepping`; pbxproj AC91/FC91; StreamClient's
+  `desktopFace` and `tapDesktop`), `KeyChords`
   (`KeyModifiers`; a
   shortcut with its modifiers' own keys pressed around it, the Spotlight key's
   ⌘Space, the trackpad's modifier keys around a click; `ForwardedKeys`, a
@@ -5528,7 +5545,9 @@ good.
   sources with `import StreamProtocol` stripped), or a `module.txt` naming the
   files `module.py` compiles as one module (pairing at home's checks):
   `addresses`, `ask-limits`, `cable-link`, `clientlink`, `clipboard`, `compatibility`,
-  `device-gate`, `dmg-layout` (Scripts/dmg-layout's `.DS_Store` and alias
+  `device-gate`, `display-stepping` (the host's DesktopDisplays and the
+  device's DisplayStepping, with random sessions through a model of a Mac and
+  its devices), `dmg-layout` (Scripts/dmg-layout's `.DS_Store` and alias
   writer, against Finder's own layout of the file, make-dmg.sh's layout
   arguments and the SVG's size and edge), `door-policy`, `duo` (DuoPosture;
   `tour` and `phone-portrait` take the Duo's real sizes too), `encoder-mailbox`,
@@ -5608,6 +5627,8 @@ SILL_TOUCHRIG_SIM='Sill touchrig' Tests/touchrig/run.sh new && Tests/touchrig/ru
 Tests/checks/run-all.sh                 # every pure check, as CI runs them (~5 min; --mutants adds the mutants, well over an hour)
 Scripts/pacing/run.sh                   # remote pacing and the link's judge, this tree against origin/main, no encoder, all on loopback (~25 min; --full ~45; --list)
 SILL_TEST_LOOPBACK=1 SILL_TEST_SOFTWARE_ENCODER=1 SILL_TEST_NO_ROUTER=1 SILL_TEST_ORIGIN=vpn SILL_TEST_PATTERN=noise .build/release/SillHost --synthetic --remote   # an away session whose stream follows its quality
+SILL_TEST_LOOPBACK=1 SILL_TEST_SOFTWARE_ENCODER=1 SILL_TEST_NO_ROUTER=1 SILL_TEST_DISPLAYS=2 .build/release/SillHost --synthetic   # a Mac with two displays: two test patterns (TEST ONLY; 2 to 4; 2@S: the last goes away after S s)
+python3 Scripts/sillclient.py PORT 10 desktop --pick=desktop:2@3   # the Desktop, then the Desktop of display 2 ("Streaming a synthetic test pattern for Test Pattern 2 (2 of 2)")
 Scripts/make-app.sh                     # .build/Sill.app, signed with the Apple Development identity (~2 s unchanged)
 Scripts/make-app.sh --install --open    # Noah: replace /Applications/Sill.app (a running one quits first), launch it
 SILL_SIGN_IDENTITY='Developer ID Application: … (9B2KKVM937)' Scripts/make-app.sh --release   # M6
@@ -5701,6 +5722,14 @@ link through `sillrelay.py --rate-mbps 5`; `sillclient.py` prints `away=` and
 `link=` on each kind 16, and `--expect` knows `awayBitrate`,
 `awayCaptureScale`, `homeBitrate`, `homeCaptureScale`, `thisConnectionAway`,
 `awayRunning` and `linkState`.
+The Mac's displays, headless (issue #91; docs/display-stepping-plan.md): a synthetic host lists its
+test pattern as its one display (ID 1, "Test Pattern", 1512×949, the main one), so its window lists
+carry `displays` and `desktopDisplay` and a device's Desktop button stays today's; TEST ONLY,
+honoured only by a synthetic host (anywhere else one line says it is ignored),
+`SILL_TEST_DISPLAYS=N` (2 to 4) makes its Desktop N test patterns, "Test Pattern 2" 1440×900, 3
+1280×800 and 4 1920×1080 beside the first, each tinted, and `N@S` takes the last away S seconds after
+the start, as an unplugged display (the gone line, then the main one); a "TEST:" line at start says
+so. A synthetic host never reads the real displays. `sillclient.py`'s `desktop:N` picks one.
 The Mac's pointer, headless: every synthetic host is a dry run (its input is
 counted as `in.dry`, never posted, and activates or raises nothing) and never
 reads the real pointer. TEST ONLY, honoured only by a synthetic host (anywhere else one
@@ -5844,7 +5873,9 @@ in the normal app too), `-Sill.largerPicture 1` (its Larger Picture on for one r
 in effect while a window streams, as the mock does but with `-SillActive desktop|none`;
 the console's `larger picture: …` line says what the rule made of it;
 `-SillVideoSize WxH` the mock's frame, `-SillLargerPictureToggle <s>[,<s>…]` the
-switch at those seconds), `-SillVoiceOver 1` (that group as with VoiceOver on:
+switch at those seconds), `-SillDisplays N` (the mock Mac's N displays, issue #91: the Desktop
+button says "1 of N" and steps; 1: today's button; the console's `desktop button: …` line follows the
+face, live too), `-SillVoiceOver 1` (that group as with VoiceOver on:
 its footnote says the rows do the gestures), `-SillScanOverlay 1` (Pair This
 iPad…'s overlay; `-SillOverlayLine asking|shown|openonmac|locked|noanswer` the
 line its ask's answer sets; under `-SillLive 1` it opens over the live session
@@ -5919,8 +5950,9 @@ key row, `gesture NAME[,FINGERS]` a three-finger gesture through
 (only while the input view takes Esc), `scroll DX,DY` a trackpad's two-finger
 scroll with its coast, `wheel DX,DY` a wheel's plain deltas, `keyboard
 attach|detach` a hardware keyboard coming or going, `orient landscape|portrait`
-the scene turned (an iPhone's); the console's "input script: …" and "pointer: …" lines say what
-happened; it runs only when the session was dialled by `-SillConnect` to a
+the scene turned (an iPhone's), `desktop` the Desktop button's tap (`StreamClient.tapDesktop`: the
+next display while the Desktop streams, issue #91); the console's "input script: …" and "pointer: …"
+lines say what happened; it runs only when the session was dialled by `-SillConnect` to a
 loopback address, `127.0.0.1:P`, `::1:P` or `localhost:P`, and the host's first
 window list has no version: Sill.app's always has, and would post the input to
 this Mac, so the console says "input script: refused: …" and nothing is sent;
@@ -6034,7 +6066,13 @@ device keeps working with Macs from the first public build on, or each says why
   the receiver's clipboard, `image` is reserved for that later generation; a subscription says what
   the device takes, `{}` being text alone, so a host sends `image` only to a connection whose
   subscription carries a later field saying it takes images (`"accepts":2`, say), never to one that
-  sent `{}`.
+  sent `{}`; the Mac's displays (issue #91, docs/display-stepping-plan.md): a window list's
+  `displays` (DisplayInfo `{id, name, width, height, main}`, pull request #66's shape, `width` and
+  `height` points as numbers that may have a fraction) and `desktopDisplay`, and a Desktop pick that
+  names one inside the Desktop's object (`{"desktop":{"display":N}}`, SourcePick), which a device
+  sends only to a host whose list has two or more displays, which every host reads as the Desktop (a
+  host from before streams its own), and which without a display is `StreamSource`'s own bytes, so a
+  device from before gets the main display.
 - Pairing as 1.0 does it (docs/home-pairing-plan.md §3): the Bonjour TXT keys `r` (the recognition
   tag) and `p` ("1" pairing required, "0" open, no `p` a plain door, any other value read as "1");
   a `sill-pair/1` connection is exactly one kind 19, with no hello (the device gate judges sessions
