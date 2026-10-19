@@ -150,6 +150,24 @@ Additive both ways; no new kind (29–31 and 33–44 stay where open pull reques
   guard: a loopback test host only); the console's `desktop button: …` line whenever the button's
   face changes (DEBUG).
 
+### Where it meets the open pull requests
+
+- **#66** (the Mac viewer; #72 and #73 on it): `DisplayInfo`, `WindowList.displays` and
+  `desktopDisplay` are its names and shape, word for word; it picks the Desktop's display with a kind
+  40 `PickDisplay {display}` and lists every display as a Desktop window (`DesktopWindow`), its catalog
+  keeping `realDisplays` and `desktopDisplayID`. Whichever lands second keeps one `DisplayInfo`, one
+  catalog rule (this one's order, its own filter of Sill's displays) and both picks (kind 6's display
+  here, kind 40 there) setting the one `desktopDisplayID`.
+- **#156 and #161** (the device desktop: a virtual display of the device's size made main while the
+  Desktop streams): their catalog filters Sill's displays (vendor `VirtualStage.vendorID`) out of the
+  Desktop's real screen, as `DesktopDisplays.ordered` does; `preferMainDisplay`, which both change, is
+  gone here (the main display always leads). While their device desktop is main, the main display is
+  not listed here, and the first listed stands in for it; whichever lands second decides whether the
+  device desktop is the Desktop's display while it lives (it is, there: their Desktop is that display).
+  #156's second tap on Desktop (its full screen) is out since Noah's word on #92 (a Settings toggle and
+  a shake), so a tap while the Desktop streams is free for the next display.
+- **#158** (visionOS, a coordinator per session): each would keep its own Desktop display.
+
 ## Open questions for Noah (the default is taken unless Noah says otherwise)
 
 1. **Sill's own virtual display.** Default: **left out** (rule 8). The alternative keeps a staged

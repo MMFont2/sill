@@ -8,6 +8,66 @@ Formerly winstream; the folder still carries the old name.
 
 ## Current step
 
+**Which of the Mac's displays the Desktop shows (2026-10-20, branch `display-stepping` from origin/main at
+d1fa97e; issue #91, with #139 closed into it; the plan, its twelve open questions with the defaults taken,
+and the results are in `docs/display-stepping-plan.md`).** Noah on #91: "the tapping method. The Desktop
+button shows which desktop the stream is on, a monitor or the virtual display, and when there is another
+one it says so and a tap moves to the next. With one display it is the plain Desktop button as today."
+Wire, host and device; additive, no new kind.
+- Wire: the window list gains `displays: [DisplayInfo]?` (`{id, name, width, height, main}`: the
+  CGDirectDisplayID, NSScreen's name, points as Double, `main` only on the main one) and `desktopDisplay:
+  UInt32?` (the one the Desktop shows: the streamed one, else the last pick's, else the main one), pull
+  request #66's names and shape, so whichever lands second reconciles code alone (#66 picks by its kind
+  40; both can stay). Kind 6's Desktop pick may name a display inside its object,
+  `{"desktop":{"display":N}}` (`SourcePick`, Switcher.swift); without one it is `StreamSource`'s own
+  bytes, and a host from before reads it as the Desktop (v0.5.1's StreamProtocol and SillHost: the
+  plan's H4 and H7). A device names one only when the Mac's list has two or more.
+- Host: `DesktopDisplays` (pure): the order (the main display first, then those whose left edge is at or
+  right of its own, then those to its left, each left to right, ties the higher then by ID; never Sill's
+  own virtual display, vendor 0x5111), `resolve` (the named display if listed, else the main one, else
+  the first), the list's entries, the lines. `WindowCatalog.desktopDisplays` (each look; NSScreen's name
+  once per display, "Built-in Display" or "Display" while AppKit does not know one, as in the CLI
+  without its loop after a hotplug; never read on a synthetic host); `preferMainDisplay` is gone: the
+  main display leads always (the Desktop was `displays.first`, which macOS does not order). The
+  coordinator: `desktopDisplayID` (the last Desktop pick's, nil for the main one, for every device,
+  kept through restarts and window picks), `streamedDisplay` (input, the pointer, the re-check's size),
+  `handlePick(SourcePick)` (a pick of another display during a restart of the Desktop waits for it, one
+  of the same display needs nothing), a pick naming a display not listed ("Desktop: display 3 is not
+  connected; streaming Built-in Retina Display (1 of 2), the main display."), a display gone while the
+  Desktop streams it, by the catalog's look or under a capture that stopped while it is offline
+  (`displaysChanged`, `captureStopped`: "Desktop: LG UltraFine is gone; streaming Built-in Retina
+  Display, the main display, instead.", a restart there at once), and with two or more displays the
+  stream's line names it ("Streaming the whole desktop of LG UltraFine (2 of 2) at …"; with one, the
+  line as it was). The Mac's menu card says "Whole Desktop" as before.
+- Device: `DisplayStepping` (pure): the steps (the Mac's list when it has two or more, a duplicate ID
+  dropped), the display shown (this device's own pick while it stands, else the Mac's word, else main,
+  else first), a tap (`pick`: the next while the Desktop streams, wrapping; the one shown from a window
+  or nothing; today's pick with fewer than two), the face ("1 of 2" where it said "Desktop", the symbol
+  kept, as Aa's value sits under Aa; VoiceOver "Desktop, Built-in Retina Display, 1 of 2" with the hint
+  "Shows the next display, LG UltraFine." or "Shows this display’s desktop."; a phone's Large Content
+  Viewer "Desktop, 1 of 2"; with fewer than two `plain`, today's word for word), a pick that stands
+  (max(3 s, 4 × the worst round trip), until the Mac's list names it: two quick taps step twice).
+  StreamClient: `hostDisplays`, `hostDesktopDisplay`, `desktopAsk`, `desktopFace`, `tapDesktop`; its own
+  Desktop requests and a gesture's Desktop pick the display shown (`desktopPick`). TopBar, the iPad's
+  portrait window bar and a phone's row 1 (five, or six beside Menus) draw the face; BarButton gains an
+  optional hint. pbxproj AC91/FC91.
+- Sill's own virtual display is left out (the plan's rule 8: a Desktop pick releases the stage before
+  its capture starts, its picture would be the staged window on its envelope display, and the list would
+  change at every window picked in that mode); other virtual displays macOS lists (Sidecar, AirPlay, a
+  dummy display) stream as any monitor.
+- Defaults taken (the plan's 12): Sill's display left out; "1 of 2" in the label's place; main first,
+  then rightwards, wrapping; a tap from a window shows the display named; one Desktop for every device;
+  nothing remembered across launches; an unplugged display gives way to the main one at once; the hint
+  in Apple's form (the brief's "double tap for the next display" without naming the gesture); a pick
+  stands until confirmed or 3 s; the menu card unchanged; the tour unchanged; one display listed too.
+- TEST ONLY: `SILL_TEST_DISPLAYS=N` (2 to 4) gives a `--synthetic` host N test patterns as its displays
+  (each its own size and tint), `N@S` takes the last away after S s; a synthetic host lists its one test
+  pattern otherwise and never reads the real displays; `sillclient.py`'s `desktop:N`; the harness's
+  `-SillDisplays N`, the input script's `desktop` step, the console's `desktop button: …` line, and the
+  AX dump's hints.
+- Verified (the plan's Results): in progress.
+- **Untested, for Noah:** in progress (the plan's Results).
+
 **The clipboard both ways (2026-10-14, branch `clipboard` from main at 985a733; issue #64; PR #78;
 the plan, its open questions with the default taken for each, the results and the review's fixes are
 in `docs/clipboard-plan.md`).** Noah: work on the clipboard (after #67/#68, #69, #59, #57, #58), text
