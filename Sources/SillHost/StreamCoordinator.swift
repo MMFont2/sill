@@ -146,6 +146,7 @@ package final class StreamCoordinator {
     package private(set) var active: StreamSource = .none {
         didSet {
             if case .window(let id) = active { catalog.activeWindowID = id } else { catalog.activeWindowID = nil }
+            if active != .desktop { streamedDisplay = nil }   // the Desktop's display is kept (desktopDisplayID)
             if active == .none { status.update { $0.stream = nil } }
             server.setStreaming(active != .none)   // link keepalive ticks while a source is live
             cursorShapes.running = active != .none
@@ -160,11 +161,31 @@ package final class StreamCoordinator {
     /// the encoder fallback, a lost display): the source being restarted. Nil during a switch to
     /// another source.
     private var restartOf: StreamSource?
+    /// The display a restart of the Desktop restarts on (with `restartOf` `.desktop`): a pick of the
+    /// Desktop on another display during it is a pick of a different source (issue #91).
+    private var restartDisplayID: UInt32?
     /// A device's pick of a different source that came in during that restart (`handlePick`);
     /// taken by select's defer. Never set during a switch to another source: the device's automatic
     /// Desktop request can land then (StreamClient's window list handling) and must not override
     /// the user's pick.
-    private var pickArrivedWhileSwitching: StreamSource?
+    private var pickArrivedWhileSwitching: SourcePick?
+    /// Which display the Desktop shows (issue #91; docs/display-stepping-plan.md, DesktopDisplays):
+    /// the last Desktop pick's, nil for the main one (a pick without a display, every device before
+    /// #91), for every device; kept through restarts and window picks, forgotten for the main one when
+    /// it is gone.
+    private var desktopDisplayID: UInt32?
+    /// The display the Desktop pipeline captures (or is starting on); nil while another source, or
+    /// nothing, streams.
+    private var streamedDisplay: DesktopDisplays.Display?
+    /// TEST ONLY (SILL_TEST_DISPLAYS, a synthetic host): its Desktop's test patterns, one (the test
+    /// pattern as it always was) unless the variable says more; `testDisplaysGoneAfter` seconds after
+    /// `start` the last of them goes away, as an unplugged display. The line `start` prints about it.
+    private var testDisplays: [DesktopDisplays.Display]
+    private let testDisplaysGoneAfter: Double?
+    private let testDisplaysLine: String?
+    /// The test pattern the Desktop's synthetic capture draws: 0 the first's grey, 1 to 3 the others'
+    /// tints (SyntheticCapture.start's `variant`).
+    private var syntheticVariant = 0
     /// The client's last stream panel size and text scale. One stream, so with several clients
     /// the last one to report wins.
     private var viewport: Viewport?
@@ -291,6 +312,19 @@ package final class StreamCoordinator {
         self.hostVersion = hostVersion
         let env = ProcessInfo.processInfo.environment
         let path = PointerTestHooks.pointerPath(synthetic: synthetic, environment: env)
+        let displaysSpec = DesktopDisplays.testSpec(env["SILL_TEST_DISPLAYS"])
+        let testCount = synthetic ? (displaysSpec?.count ?? 1) : 1
+        testDisplays = DesktopDisplays.testDisplays(count: testCount)
+        testDisplaysGoneAfter = synthetic ? displaysSpec?.goneAfter : nil
+        switch (env["SILL_TEST_DISPLAYS"], synthetic, displaysSpec) {
+        case (nil, _, _): testDisplaysLine = nil
+        case (let raw?, false, _): testDisplaysLine = "SILL_TEST_DISPLAYS=\(raw) ignored: only a --synthetic host has test displays."
+        case (let raw?, true, nil): testDisplaysLine = "SILL_TEST_DISPLAYS=\(raw) ignored: 2 to 4, or N@S (the last goes away after S seconds)."
+        case (_, true, let spec?):
+            testDisplaysLine = "TEST: the Desktop is \(spec.count) test patterns (SILL_TEST_DISPLAYS), "
+                + DesktopDisplays.testDisplays(count: spec.count).map { "\($0.name) \(Int($0.frame.width))×\(Int($0.frame.height))" }.joined(separator: ", ")
+                + (spec.goneAfter.map { "; the last goes away \(String(format: "%g", $0)) s after the start" } ?? "") + "."
+        }
         let software = PointerTestHooks.softwareEncoder(synthetic: synthetic, environment: env)
         let inputLog = InputInjector.testInputLog(synthetic: synthetic, environment: env)
         pointer = PointerWatch(synthetic: synthetic, path: path.path)
@@ -338,7 +372,9 @@ package final class StreamCoordinator {
         // The identity's TXT record (its tag, and `p` on a TLS home door) must be in the first
         // registration: set before `server.start()`.
         remote?.attach(server: server, status: status, macName: macName, requirePairing: config.requirePairing)
-        catalog.preferMainDisplay = virtualDisplay   // the Desktop source must never capture the virtual display
+        // The Desktop's displays (issue #91): never Sill's own virtual display (the catalog leaves it out),
+        // and a synthetic host's are its test patterns, so it never reads the real ones.
+        catalog.listsDisplays = !synthetic
         stage.onLost = { [weak self] in Task { @MainActor in await self?.stageLost() } }
         status.update { $0.synthetic = synthetic; $0.virtualDisplayOn = config.virtualDisplay }
         // Every change of the snapshot re-publishes the devices' settings state (deduplicated, so
@@ -458,7 +494,10 @@ package final class StreamCoordinator {
         }
         capture.onStopped = { [weak self] error in
             print("Capture stopped: \(error.localizedDescription)")
-            Task { @MainActor in await self?.select(.none) }
+            Task { @MainActor in await self?.captureStopped() }
+        }
+        catalog.onDisplaysChanged = { [weak self] in
+            Task { @MainActor in await self?.displaysChanged() }
         }
         // Status for the menu bar app. The server's callbacks hop here from its network queue; the
         // stats tick runs on the main queue, which under the CLI's dispatchMain is drained by a
@@ -573,6 +612,8 @@ package final class StreamCoordinator {
     /// a device connecting, not a login.
     package func start(preselect: String?, promptForPermissions: Bool = true) async {
         for line in testHookLines { print(line) }
+        if let testDisplaysLine { print(testDisplaysLine) }   // TEST ONLY, and only with SILL_TEST_DISPLAYS set
+        if let after = testDisplaysGoneAfter { scheduleTestDisplayGoing(after: after) }
         if let line = clipboard.testHookLine { print(line) }   // TEST ONLY, and only with one of its variables set
         if !synthetic, promptForPermissions { InputInjector.ensureAccessibility() }   // prompts once; input is dropped silently without it
         if softwareOnly {
@@ -761,7 +802,6 @@ package final class StreamCoordinator {
             || old.requirePairing != next.requirePairing {
             remote?.apply(next)
         }
-        catalog.preferMainDisplay = next.virtualDisplay   // the Desktop source must never capture the virtual display
         if old.virtualDisplay && !next.virtualDisplay {
             stage.release()        // idempotent: select has already sent a staged window home
             status.update { $0.lastStageFailure = nil }
@@ -877,13 +917,15 @@ package final class StreamCoordinator {
     private func handle(_ message: StreamMessage, from connection: NWConnection) async {
         switch message.kind {
         case .selectSource:
-            guard let source = Wire.decode(StreamSource.self, from: message.payload) else { return }
+            // StreamSource's JSON, the Desktop's object perhaps naming one of the Mac's displays
+            // (SourcePick, issue #91); a device from before names none.
+            guard let pick = Wire.decode(SourcePick.self, from: message.payload) else { return }
             // A window picked comes forward on the Mac, which closes a view a gesture opened; the
             // Desktop picked (as a device does before a gesture made over a window) leaves it.
-            if case .window = source { gestureChords.forget() }
+            if case .window = pick.source { gestureChords.forget() }
             // A pick from the device's switcher: the device never selects a window by itself (its
             // automatic requests are for the Desktop only).
-            await handlePick(source)
+            await handlePick(pick)
         case .windowCommand:
             // The bar's long-press menu: the window's own traffic lights, pressed through
             // Accessibility. The staged window's element is already matched; others are looked up.
@@ -1052,8 +1094,9 @@ package final class StreamCoordinator {
         case .desktop:
             // The test pattern with the TEST ONLY scripted pointer: its own space, where a test
             // client's input moves that pointer (a synthetic host posts nothing).
-            if synthetic, pointer.hasTestPointer { return Self.testPatternRect }
-            return catalog.display?.frame
+            if synthetic, pointer.hasTestPointer { return streamedDisplay?.frame ?? Self.testPatternRect }
+            // The display the Desktop streams (issue #91), as the catalog last listed it.
+            return streamedDisplay.flatMap { catalog.scDisplay(id: $0.id) }?.frame
         case .window(let id):
             // On the virtual display the video is the captured crop, not the whole window: an app
             // that took a larger size than asked overhangs the display and the overhang is not shown.
@@ -1095,8 +1138,8 @@ package final class StreamCoordinator {
         case .none:
             return nil
         case .desktop:
-            if synthetic { return pointer.hasTestPointer ? .rect(Self.testPatternRect) : nil }
-            return catalog.display.map { .rect($0.frame) }
+            if synthetic { return pointer.hasTestPointer ? .rect(streamedDisplay?.frame ?? Self.testPatternRect) : nil }
+            return streamedDisplay.flatMap { catalog.scDisplay(id: $0.id) }.map { .rect($0.frame) }
         case .window(let id):
             guard !synthetic else { return nil }
             if virtualDisplay, stage.isStaged, let onScreen = stage.captureRectOnScreen { return .rect(onScreen) }
@@ -1186,12 +1229,31 @@ package final class StreamCoordinator {
     /// user has picked since the watched window closed (StreamClient's window list); an older
     /// device, or a pick made before the device heard of the close, can still let it land during
     /// a restart that follows the user's pick, and then it is queued like the user's own.
-    private func handlePick(_ source: StreamSource) async {
+    ///
+    /// The Desktop is a source per display (issue #91): a pick of the Desktop on another display than
+    /// the one a restart of the Desktop restarts on waits for it as a pick of another source does, and
+    /// a pick of the Desktop sets the display the Desktop shows (`desktopDisplayID`) as it runs.
+    private func handlePick(_ pick: SourcePick) async {
         if switching {
-            if let r = restartOf, source != r { pickArrivedWhileSwitching = source }
+            if let r = restartOf, !restarting(r, covers: pick) { pickArrivedWhileSwitching = pick }
             return
         }
-        await select(source, bringForward: true)
+        if pick.source == .desktop { desktopDisplayID = pick.display }   // nil: the main display
+        await select(pick.source, bringForward: true)
+    }
+
+    /// Whether the restart of `r` in flight already streams what `pick` asks for: the same window, or
+    /// the Desktop on the same display (a pick naming none, or one not listed, asks for the main one).
+    private func restarting(_ r: StreamSource, covers pick: SourcePick) -> Bool {
+        guard r == .desktop, pick.source == .desktop else { return pick.source == r }
+        return DesktopDisplays.resolve(pick.display, in: desktopDisplays)?.id == restartDisplayID
+    }
+
+    /// Whether `pick` is what streams now (select's defer: a queued pick of it needs nothing).
+    private func showing(_ pick: SourcePick) -> Bool {
+        guard pick.source == active else { return false }
+        guard active == .desktop else { return true }
+        return DesktopDisplays.resolve(pick.display, in: desktopDisplays)?.id == streamedDisplay?.id
     }
 
     /// Streams `source` in place of whatever streams now. Also how the host restarts the current
@@ -1207,9 +1269,12 @@ package final class StreamCoordinator {
         switching = true
         if source != active { missingPolls = 0 }    // a window's looks off the list are its own
         restartOf = (source == active && source != .none) ? source : nil
+        // The display a Desktop restarts on: a pick has set `desktopDisplayID` before it got here.
+        restartDisplayID = restartOf == .desktop ? DesktopDisplays.resolve(desktopDisplayID, in: desktopDisplays)?.id : nil
         defer {
             switching = false
             restartOf = nil
+            restartDisplayID = nil
             var pick = pickArrivedWhileSwitching
             pickArrivedWhileSwitching = nil
             // Requests that arrived mid-switch, applied now that `switching` is clear again (every
@@ -1223,7 +1288,7 @@ package final class StreamCoordinator {
                 }
             }
             if catalog.clientCount == 0 { pick = nil }
-            if let pick, pick != active {
+            if let pick, !showing(pick) {
                 // The pick's own select fits the latest viewport. Run after it has started, the
                 // viewport tail would resize the old window, which `active` still names mid-switch.
                 viewportArrivedWhileSwitching = false
@@ -1388,14 +1453,29 @@ package final class StreamCoordinator {
             // Staged on the virtual display, nothing is activated or raised on select: the window
             // cannot be covered there, and the AX moves that put it there touch no focus.
         case .desktop:
+            // Which display (issue #91, DesktopDisplays): the Desktop's, a pick's and kept through
+            // restarts, else the main one; one no longer listed gives way to the main one, with a line.
+            let listed = desktopDisplays
+            let shown = DesktopDisplays.resolve(desktopDisplayID, in: listed)
+            if let asked = desktopDisplayID, shown?.id != asked {
+                print(DesktopDisplays.missingLine(asked: asked, instead: shown, in: listed))
+                desktopDisplayID = nil
+            }
+            // "LG UltraFine (2 of 2)" in the stream's line; nothing with one display, whose line is as it was.
+            let which = shown.flatMap { DesktopDisplays.which($0, in: listed) }
             if synthetic {
                 // A 1512×949-point test pattern: the same size as a typical streamed window, so the
-                // encoder and the fallback see realistic load without Screen Recording.
-                width = evenPixels(1512 * captureScale); height = evenPixels(949 * captureScale)
-                describe = "a synthetic test pattern\(useSoftwareEncoder ? " (software encoder)" : "")"
+                // encoder and the fallback see realistic load without Screen Recording. TEST ONLY: with
+                // SILL_TEST_DISPLAYS, the test pattern of the display picked, at its size and in its tint.
+                let pattern = shown ?? testDisplays[0]
+                width = evenPixels(pattern.frame.width * captureScale); height = evenPixels(pattern.frame.height * captureScale)
+                syntheticVariant = max(0, min(3, Int(pattern.id) - 1))
+                streamedDisplay = pattern
+                describe = "a synthetic test pattern\(which.map { " for \($0)" } ?? "")\(useSoftwareEncoder ? " (software encoder)" : "")"
                 title = "Test Pattern"; kind = .testPattern
             } else {
-                guard let d = catalog.display else { active = .none; broadcastList(); return }
+                guard let shown, let d = catalog.scDisplay(id: shown.id) else { active = .none; broadcastList(); return }
+                streamedDisplay = shown
                 // Sill's own windows (Settings, Log, the pairing window with its code) never go out
                 // in a Desktop stream. Fixed here at pipeline start: a running SCStream is never
                 // reconfigured, so a host that can show a pairing code (remote access) looks for
@@ -1413,7 +1493,7 @@ package final class StreamCoordinator {
                     filter = SCContentFilter(display: d, excludingWindows: [])
                 }
                 width = evenPixels(CGFloat(d.width) * captureScale); height = evenPixels(CGFloat(d.height) * captureScale)
-                describe = "the whole desktop\(useSoftwareEncoder ? " (software encoder)" : "")"
+                describe = "the whole desktop\(which.map { " of \($0)" } ?? "")\(useSoftwareEncoder ? " (software encoder)" : "")"
                 title = "Whole Desktop"; kind = .desktop
             }
         }
@@ -1474,7 +1554,7 @@ package final class StreamCoordinator {
             try await capture.start(filter: filter, width: width, height: height, fps: fps, showsCursor: false, sourceRect: sourceRect)
         } else {
             syntheticCapture.onFrame = { pixelBuffer, pts in enc.encode(pixelBuffer, pts: pts) }
-            syntheticCapture.start(width: width, height: height, fps: fps)
+            syntheticCapture.start(width: width, height: height, fps: fps, variant: syntheticVariant)
         }
         encoder = enc
         active = source
@@ -2111,7 +2191,9 @@ package final class StreamCoordinator {
             return (evenPixels(CGFloat(enc.width) * factor), evenPixels(CGFloat(enc.height) * factor))
         }
         if synthetic { return (evenPixels(1512 * scale), evenPixels(949 * scale)) }
-        if let d = catalog.display { return (evenPixels(CGFloat(d.width) * scale), evenPixels(CGFloat(d.height) * scale)) }
+        if let shown = desktopShown, let d = catalog.scDisplay(id: shown.id) {
+            return (evenPixels(CGFloat(d.width) * scale), evenPixels(CGFloat(d.height) * scale))
+        }
         return (evenPixels(1920 * scale), evenPixels(1080 * scale))
     }
 
@@ -2229,6 +2311,71 @@ package final class StreamCoordinator {
         broadcastList()
     }
 
+    // MARK: The Desktop's display (issue #91; docs/display-stepping-plan.md)
+
+    /// The displays the Desktop can show, in the devices' order: the catalog's, or a synthetic host's
+    /// test patterns (TEST ONLY: SILL_TEST_DISPLAYS; one, as it always was, without it).
+    private var desktopDisplays: [DesktopDisplays.Display] { synthetic ? testDisplays : catalog.desktopDisplays }
+
+    /// The display the Desktop shows (the window list's `desktopDisplay`): the one it streams while it
+    /// streams, else the one a Desktop pick without a display would get now, the last pick's or main.
+    private var desktopShown: DesktopDisplays.Display? {
+        let listed = desktopDisplays
+        if active == .desktop, let s = streamedDisplay, let d = listed.first(where: { $0.id == s.id }) { return d }
+        return DesktopDisplays.resolve(desktopDisplayID, in: listed)
+    }
+
+    /// The displays changed (the catalog's look; a synthetic host's test display going): every device
+    /// is sent them, and a Desktop whose display is no longer listed restarts on the main one, with a
+    /// line (the plan's rule 5). A switch in flight resolves the Desktop's display afresh and sends the
+    /// list as it ends.
+    private func displaysChanged() async {
+        guard !switching else { return }
+        let listed = desktopDisplays
+        guard active == .desktop, let gone = streamedDisplay, !listed.contains(where: { $0.id == gone.id }) else {
+            broadcastList()
+            return
+        }
+        print(DesktopDisplays.goneLine(gone, instead: DesktopDisplays.resolve(nil, in: listed), in: listed))
+        desktopDisplayID = nil
+        await select(.desktop)
+    }
+
+    /// The capture stopped by itself. The Desktop's, under a display that is no longer connected
+    /// (unplugged, a lid closed under a monitor): the main display at once, as a display the catalog
+    /// no longer lists (rule 5); anything else stops, as it always did (the device asks again).
+    private func captureStopped() async {
+        if active == .desktop, !synthetic, let gone = streamedDisplay, !Self.displayOnline(gone.id), !switching {
+            let listed = desktopDisplays.filter { $0.id != gone.id }
+            print(DesktopDisplays.goneLine(gone, instead: DesktopDisplays.resolve(nil, in: listed), in: listed))
+            desktopDisplayID = nil
+            await select(.desktop)
+            return
+        }
+        await select(.none)
+    }
+
+    /// Whether a display is still connected (asleep counts: it is online, not active).
+    private static func displayOnline(_ id: UInt32) -> Bool {
+        var count: UInt32 = 0
+        guard CGGetOnlineDisplayList(0, nil, &count) == .success, count > 0 else { return false }
+        var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
+        guard CGGetOnlineDisplayList(count, &ids, &count) == .success else { return false }
+        return ids.prefix(Int(count)).contains(id)
+    }
+
+    /// TEST ONLY (SILL_TEST_DISPLAYS=N@S): the last test display goes away S seconds after `start`, as an
+    /// unplugged display, through the same rule as a real one.
+    private func scheduleTestDisplayGoing(after seconds: Double) {
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(seconds))
+            guard let self, self.testDisplays.count > 1 else { return }
+            let gone = self.testDisplays.removeLast()
+            print("TEST: \(gone.name) goes away (SILL_TEST_DISPLAYS).")
+            await self.displaysChanged()
+        }
+    }
+
     private var encoderWidth: Int { encoder?.width ?? 0 }
     private var encoderHeight: Int { encoder?.height ?? 0 }
 
@@ -2319,10 +2466,14 @@ package final class StreamCoordinator {
     // MARK: Catalog to clients
 
     private func listMessage() -> StreamMessage {
-        StreamMessage(kind: .windowList, timestamp: Date().timeIntervalSince1970, isKeyframe: false,
-                      payload: Wire.encode(WindowList(macName: macName, windows: catalog.infos, active: active, launchID: launchID,
-                                                      hostVersion: hostVersion, protocol: SillProtocol.current,
-                                                      gestures: TrackpadGesture.generation, clipboard: clipboard.advertised)))
+        // The Mac's displays and the Desktop's (issue #91): none before the catalog's first look.
+        let listed = desktopDisplays
+        return StreamMessage(kind: .windowList, timestamp: Date().timeIntervalSince1970, isKeyframe: false,
+                             payload: Wire.encode(WindowList(macName: macName, windows: catalog.infos, active: active, launchID: launchID,
+                                                             hostVersion: hostVersion, protocol: SillProtocol.current,
+                                                             gestures: TrackpadGesture.generation, clipboard: clipboard.advertised,
+                                                             displays: listed.isEmpty ? nil : DesktopDisplays.infos(listed),
+                                                             desktopDisplay: listed.isEmpty ? nil : desktopShown?.id)))
     }
 
     private func broadcastList() { server.broadcast(listMessage()) }

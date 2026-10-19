@@ -19,6 +19,11 @@ import ImageIO
 /// filling the frame and cropped to its shape, in place of the grey ground and its bar: a Desktop
 /// that looks like one, for photographs of the device (docs/iphone-duo-plan.md). A picture that does
 /// not load gives the pattern, with one line.
+///
+/// TEST ONLY: a synthetic host with SILL_TEST_DISPLAYS lists several test patterns as its displays
+/// (issue #91, DesktopDisplays.testDisplays); `start`'s `variant` tints the ground of the second to the
+/// fourth (blue, green, amber) so a photograph tells them apart. The first, variant 0, is the grey
+/// pattern as it always was.
 final class SyntheticCapture: @unchecked Sendable {   // state is confined to `queue` (see above)
     static let noise: Bool = ProcessInfo.processInfo.environment["SILL_TEST_PATTERN"] == "noise"
     /// `SILL_TEST_PATTERN=picture:<path>`'s path.
@@ -34,8 +39,11 @@ final class SyntheticCapture: @unchecked Sendable {   // state is confined to `q
     private var fps = 60
     /// The picture's planes at the frame's size (`SILL_TEST_PATTERN=picture:`), nil for the pattern.
     private var picture: SyntheticPicture?
+    /// The ground's chroma (Cb, Cr): neutral for variant 0, a tint for the other test displays.
+    private var tint: (cb: UInt8, cr: UInt8) = (128, 128)
+    private static let tints: [(cb: UInt8, cr: UInt8)] = [(128, 128), (160, 112), (104, 104), (96, 150)]
 
-    func start(width: Int, height: Int, fps: Int) {
+    func start(width: Int, height: Int, fps: Int, variant: Int = 0) {
         timer?.cancel()
         let attrs: [CFString: Any] = [kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
                                       kCVPixelBufferWidthKey: width, kCVPixelBufferHeightKey: height,
@@ -44,7 +52,8 @@ final class SyntheticCapture: @unchecked Sendable {   // state is confined to `q
         CVPixelBufferPoolCreate(nil, nil, attrs as CFDictionary, &pool)
         let picture = Self.picturePath.flatMap { SyntheticPicture(path: $0, width: width, height: height) }
         if let path = Self.picturePath, picture == nil { print("Synthetic capture: \(path) did not load; the pattern instead (SILL_TEST_PATTERN)") }
-        queue.async { [weak self] in self?.pool = pool; self?.frameIndex = 0; self?.fps = fps; self?.picture = picture }   // ordered before the timer's first tick
+        let tint = Self.tints[max(0, min(Self.tints.count - 1, variant))]
+        queue.async { [weak self] in self?.pool = pool; self?.frameIndex = 0; self?.fps = fps; self?.picture = picture; self?.tint = tint }   // ordered before the timer's first tick
         let timer = DispatchSource.makeTimerSource(queue: queue)
         timer.schedule(deadline: .now(), repeating: 1.0 / Double(fps), leeway: .milliseconds(1))
         timer.setEventHandler { [weak self] in self?.tick() }
@@ -95,7 +104,14 @@ final class SyntheticCapture: @unchecked Sendable {   // state is confined to `q
             }
         }
         if let uv = CVPixelBufferGetBaseAddressOfPlane(pb, 1) {
-            memset(uv, 128, CVPixelBufferGetBytesPerRowOfPlane(pb, 1) * CVPixelBufferGetHeightOfPlane(pb, 1))
+            let bytes = CVPixelBufferGetBytesPerRowOfPlane(pb, 1) * CVPixelBufferGetHeightOfPlane(pb, 1)
+            if tint == (128, 128) {
+                memset(uv, 128, bytes)
+            } else {
+                // Interleaved Cb, Cr: the test display's tint (SILL_TEST_DISPLAYS).
+                let p = uv.assumingMemoryBound(to: UInt8.self)
+                for i in stride(from: 0, to: bytes - 1, by: 2) { p[i] = tint.cb; p[i + 1] = tint.cr }
+            }
         }
         CVPixelBufferUnlockBaseAddress(pb, [])
         Stats.shared.bump("cap.complete")

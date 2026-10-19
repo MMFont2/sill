@@ -17,7 +17,17 @@ import StreamProtocol
 final class WindowCatalog {
     private(set) var windows: [SCWindow] = []
     private(set) var infos: [WindowInfo] = []
-    private(set) var display: SCDisplay?
+    /// The Mac's displays a Desktop can show, in the order the devices step through them (issue #91,
+    /// DesktopDisplays.ordered: the main one first, never Sill's own virtual display), from the last
+    /// look; empty before one and without Screen Recording, and on a synthetic host (`listsDisplays`).
+    private(set) var desktopDisplays: [DesktopDisplays.Display] = []
+    /// The same displays as ScreenCaptureKit lists them, by ID, for the Desktop's filter.
+    private var scDisplays: [UInt32: SCDisplay] = [:]
+    /// macOS's names for the displays (NSScreen's localizedName), read once per display.
+    private var displayNames: [UInt32: String] = [:]
+    /// False on a synthetic host, whose Desktop is a test pattern: the real displays are never read
+    /// (nor NSScreen asked for their names).
+    var listsDisplays = true
     private(set) var installedApps: [AppInfo] = []
     /// This process as ScreenCaptureKit lists it, from the last look: the Desktop stream leaves it
     /// out, so Sill's own windows (the pairing code above all) never reach a device. Nil when it
@@ -26,6 +36,9 @@ final class WindowCatalog {
 
     /// Fires when the window list changes (new, closed, retitled, resized, reordered).
     var onWindowsChanged: (([WindowInfo]) -> Void)?
+    /// Fires when the displays change (one plugged in or gone, renamed, resized, rearranged, another
+    /// made main): the devices' lists carry them, and a Desktop whose display went falls back.
+    var onDisplaysChanged: (@MainActor () -> Void)?
     /// Fires after every poll's window-list read (each `pollInterval` while a client is connected),
     /// changed or not: the Desktop's menus follow the frontmost app, and an app's menus that did
     /// not answer are read again (StreamCoordinator's `menusPolled`).
@@ -78,10 +91,9 @@ final class WindowCatalog {
     /// because its contents are the ones changing. Nil is fine: it is then treated like any other.
     var activeWindowID: UInt32?
 
-    /// `--virtual-display`: the Desktop source must capture the Mac's real main display, never the
-    /// virtual one. `SCShareableContent.displays` order is not guaranteed once a second display
-    /// exists, so pick by ID. Off by default: the default path keeps `displays.first`.
-    var preferMainDisplay = false
+    /// One of the Mac's displays as ScreenCaptureKit listed it at the last look, by its ID; nil when it
+    /// is not listed (gone, or never this Mac's).
+    func scDisplay(id: UInt32) -> SCDisplay? { scDisplays[id] }
 
     /// `--virtual-display`: the window the coordinator has moved onto the virtual display. Set right
     /// after a successful placement, cleared on release. If ScreenCaptureKit stops treating it as
@@ -242,9 +254,7 @@ final class WindowCatalog {
         guard seq > appliedSeq else { return }      // a newer refresh already landed; don't go backwards
         appliedSeq = seq
         ownApplication = content.applications.first { $0.processID == Self.ownPID }
-        display = preferMainDisplay
-            ? (content.displays.first { $0.displayID == CGMainDisplayID() } ?? content.displays.first)
-            : content.displays.first
+        if listsDisplays { readDisplays(content.displays) }
         var visible = content.windows.filter { w in
             guard let app = w.owningApplication, !app.applicationName.isEmpty else { return false }
             return w.windowLayer == 0                                  // drops widgets, wallpaper, backstop
@@ -272,6 +282,39 @@ final class WindowCatalog {
             infos = newInfos
             onWindowsChanged?(newInfos)
         }
+    }
+
+    // MARK: Displays (issue #91)
+
+    /// The displays the Desktop can show, from one look: macOS does not order ScreenCaptureKit's list
+    /// (the Desktop was once its first, issue #91), so they go in DesktopDisplays' order, main first,
+    /// and Sill's own virtual display never among them (it would take a staged window's place). Each
+    /// display's frame is the window server's (CGDisplayBounds, global points); its name NSScreen's,
+    /// asked only for a display not yet named.
+    private func readDisplays(_ listed: [SCDisplay]) {
+        let main = CGMainDisplayID()
+        let read = listed.map { d -> DesktopDisplays.Display in
+            let bounds = CGDisplayBounds(d.displayID)
+            return DesktopDisplays.Display(id: d.displayID, name: name(of: d.displayID),
+                                           frame: bounds.isEmpty ? d.frame : bounds,
+                                           isMain: d.displayID == main,
+                                           isSill: StreamCoordinator.isSillVirtualDisplay(d.displayID))
+        }
+        scDisplays = Dictionary(listed.map { ($0.displayID, $0) }, uniquingKeysWith: { first, _ in first })
+        let ordered = DesktopDisplays.ordered(read)
+        guard ordered != desktopDisplays else { return }
+        desktopDisplays = ordered
+        onDisplaysChanged?()
+    }
+
+    /// macOS's name for a display, kept once NSScreen gave one; until then (a display AppKit has not
+    /// learned of: the CLI has no AppKit loop) DesktopDisplays' stand-in, asked again at the next look.
+    private func name(of id: CGDirectDisplayID) -> String {
+        if let known = displayNames[id] { return known }
+        let screen = NSScreen.screens.first { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) == id }
+        let name = DesktopDisplays.name(screen?.localizedName, builtIn: CGDisplayIsBuiltin(id) != 0)
+        if screen != nil { displayNames[id] = name }
+        return name
     }
 
     /// Thumbnail cadence, per window: every pass (2 s) if its `WindowInfo` changed since its last
