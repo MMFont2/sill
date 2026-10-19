@@ -778,9 +778,10 @@ enum DiscoveryPolicy {
     // is dialled at once. (After "shutdown" or "restart" nothing listed before is dialled at all:
     // `reconnectRow`'s `offAt`.)
 
-    /// Nothing dials a Mac that said it is going to sleep, shutting down or restarting sooner than
-    /// this after it said so (`listingStart`, `firstRemoteDial`): the wait `redialRow` gives the dial
-    /// after `reconnectQuietAfter` that did not connect, 20 s.
+    /// How long after the Mac said it is going to sleep its row as listed then is first dialled
+    /// (`listingStart`), and after it said it is going to sleep, shutting down or restarting its
+    /// addresses (`firstRemoteDial`): the wait `redialRow` gives the dial after `reconnectQuietAfter`
+    /// that did not connect, 20 s. A row listed afresh (the Mac back) is never held.
     static var asleepWait: Double { reconnectRetry[reconnectQuietAfter - 1] }
 
     /// The dials a listing of the Mac's row starts with (`redialRow`'s `failed` and `lastDialAt`):
