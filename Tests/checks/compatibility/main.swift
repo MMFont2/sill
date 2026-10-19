@@ -4,8 +4,9 @@ import Foundation
 // Sources/StreamProtocol compiled into this binary:
 //   swiftc -O Sources/StreamProtocol/*.swift Tests/checks/compatibility/main.swift -o check
 // Given a path, it also writes the payloads that H4 read with an older StreamProtocol (cb0ec55's),
-// the trackpad gestures plan's H6 (a kind 28 message, a window list with `gestures`), and the
-// clipboard's (a kind 32 message, a window list with `clipboard`).
+// the trackpad gestures plan's H6 (a kind 28 message, a window list with `gestures`), the
+// clipboard's (a kind 32 message, a window list with `clipboard`), and the displays' (a window list
+// with `displays`, a Desktop pick naming its display: v0.5.1's StreamProtocol read both).
 var failures = 0
 var checks = 0
 func check(_ ok: Bool, _ what: @autoclosure () -> String, line: Int = #line) {
@@ -187,6 +188,52 @@ let clipboardMessage = StreamMessage(kind: .clipboard, timestamp: 1, isKeyframe:
 check(StreamMessage.parseHeader(clipboardMessage)?.kind == .clipboard && clipboardMessage.count == StreamMessage.headerLength + Wire.encode(clip).count,
       "the clipboard's header parses, then the JSON")
 
+// The Mac's displays (issue #91, docs/display-stepping-plan.md): the window list's `displays` and
+// `desktopDisplay` (pull request #66's shape), and the Desktop's pick naming one inside kind 6's
+// object. Additive both ways: an older device skips the keys, and an older host reads the pick as the
+// Desktop.
+let builtIn = DisplayInfo(id: 1, name: "Built-in Retina Display", width: 1512, height: 982, main: true)
+let ultraFine = DisplayInfo(id: 69733632, name: "LG UltraFine", width: 2560, height: 1440)
+check(json(builtIn) == #"{"height":982,"id":1,"main":true,"name":"Built-in Retina Display","width":1512}"#, "a display's keys: \(json(builtIn))")
+check(json(ultraFine) == #"{"height":1440,"id":69733632,"name":"LG UltraFine","width":2560}"#, "no main: left out: \(json(ultraFine))")
+let lists = WindowList(macName: "Mac mini", windows: [], active: .desktop, launchID: "L", hostVersion: "0.6", protocol: 1,
+                       gestures: TrackpadGesture.generation, clipboard: ClipboardPolicy.generation,
+                       displays: [builtIn, ultraFine], desktopDisplay: ultraFine.id)
+check(json(lists).contains(#""desktopDisplay":69733632"#) && json(lists).contains(#""displays":[{"height":982,"id":1,"#),
+      "a list from a host that lists its displays carries both keys: \(json(lists))")
+check(!json(shares).contains("displays") && !json(shares).contains("desktopDisplay"), "a list without them leaves both out")
+check(decodedOld != nil && decodedOld?.displays == nil && decodedOld?.desktopDisplay == nil, "an older host's list decodes, displays nil")
+check(Wire.decode(WindowList.self, from: Wire.encode(lists)).map { $0.displays == [builtIn, ultraFine] && $0.desktopDisplay == ultraFine.id
+                                                                    && $0.clipboard == 1 && $0.gestures == 1 } == true,
+      "displays and desktopDisplay round-trip beside the rest")
+check(Wire.decode(DisplayInfo.self, from: Data(#"{"id":2,"name":"Sidecar","width":1180.5,"height":820,"later":true}"#.utf8))
+        == DisplayInfo(id: 2, name: "Sidecar", width: 1180.5, height: 820), "a fractional size and unknown keys decode")
+check(Wire.decode(DisplayInfo.self, from: Data(#"{"id":2,"width":1,"height":1}"#.utf8)) == nil, "no name: no display")
+// Pull request #66's list (its other keys among them) reads here.
+let sixtySix = #"{"macName":"M","windows":[],"active":{"desktop":{}},"sideStreams":2,"displays":[{"id":3,"name":"Studio Display","width":2560,"height":1440,"main":true}],"desktopDisplay":3,"rebuildDesk":true}"#
+check(Wire.decode(WindowList.self, from: Data(sixtySix.utf8)).map { $0.displays?.first?.name == "Studio Display" && $0.desktopDisplay == 3 } == true,
+      "pull request #66's list reads here")
+// Kind 6: without a display, exactly StreamSource's bytes; with one, inside the Desktop's object.
+let plainPick = String(decoding: Wire.encode(SourcePick(.desktop)), as: UTF8.self)
+check(plainPick == #"{"desktop":{}}"# && plainPick == String(decoding: Wire.encode(StreamSource.desktop), as: UTF8.self),
+      "a Desktop pick without a display is today's: \(plainPick)")
+let displayPick = String(decoding: Wire.encode(SourcePick(.desktop, display: 69733632)), as: UTF8.self)
+check(displayPick == #"{"desktop":{"display":69733632}}"#, "a Desktop pick naming its display: \(displayPick)")
+check(String(decoding: Wire.encode(SourcePick(.window(5), display: 3)), as: UTF8.self) == #"{"window":{"_0":5}}"#
+      && String(decoding: Wire.encode(SourcePick(.none, display: 3)), as: UTF8.self) == #"{"none":{}}"#,
+      "no display on another source's pick")
+check(Wire.decode(StreamSource.self, from: Data(displayPick.utf8)) == .desktop, "an older host reads the pick as the Desktop")
+check(Wire.decode(SourcePick.self, from: Data(displayPick.utf8)) == SourcePick(.desktop, display: 69733632), "the pick reads back")
+check(Wire.decode(SourcePick.self, from: Data(#"{"desktop":{}}"#.utf8)) == SourcePick(.desktop), "an older device's pick: no display")
+check(Wire.decode(SourcePick.self, from: Data(#"{"desktop":{"display":"2"}}"#.utf8)) == SourcePick(.desktop)
+      && Wire.decode(SourcePick.self, from: Data(#"{"desktop":{"display":-1}}"#.utf8)) == SourcePick(.desktop),
+      "a display that is not a UInt32 reads as none, the pick still the Desktop")
+check(Wire.decode(SourcePick.self, from: Data(#"{"window":{"_0":5},"display":3}"#.utf8)) == SourcePick(.window(5))
+      && Wire.decode(SourcePick.self, from: Data(#"{"none":{"display":3}}"#.utf8)) == SourcePick(.none),
+      "a display beside a window's or none's pick is ignored")
+check(Wire.decode(SourcePick.self, from: Data(#"{"desktop":{},"window":{"_0":1}}"#.utf8)) == nil, "two sources: no pick")
+check(StreamMessageKind.selectSource.rawValue == 6, "kind 6 is the pick")
+
 // For H4: what cb0ec55's StreamProtocol must read.
 let out = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : nil
 if let out {
@@ -199,6 +246,8 @@ if let out {
         "windowListGestures": String(decoding: Wire.encode(takes), as: UTF8.self),
         "windowListClipboard": String(decoding: Wire.encode(shares), as: UTF8.self),
         "clipboardMessage": clipboardMessage.base64EncodedString(),
+        "windowListDisplays": String(decoding: Wire.encode(lists), as: UTF8.self),
+        "pickDisplay": displayPick,
     ]
     try! JSONSerialization.data(withJSONObject: payloads, options: [.sortedKeys, .prettyPrinted]).write(to: URL(fileURLWithPath: out))
 }

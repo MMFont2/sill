@@ -370,6 +370,12 @@ check("kind 28 is gesture (trackpad gestures), 29 unknown (skipped)", header(28)
 check("kind 32 is the clipboard; 29, 30, 31 and 33 unknown (skipped)",
       header(32)?.kind == .clipboard && [29, 30, 31, 33].allSatisfy { header(UInt8($0))?.kind == .unknown })
 check("kinds 16 and 17 unchanged", header(16)?.kind == .hostSettings && header(17)?.kind == .changeSettings)
+// Issue #91: no new kind. The Desktop's display goes inside kind 6's object, the Mac's displays in
+// kind 2's list (docs/display-stepping-plan.md; the compatibility check has the rest).
+check("kind 6 is the pick, kind 2 the window list; a Desktop pick naming its display stays kind 6, its key inside the Desktop's object",
+      header(6)?.kind == .selectSource && header(2)?.kind == .windowList
+      && String(decoding: Wire.encode(SourcePick(.desktop, display: 69733632)), as: UTF8.self) == #"{"desktop":{"display":69733632}}"#
+      && Wire.encode(SourcePick(.desktop, display: UInt32.max)).count < 64)
 check("caps: 1 MiB client, 4 KiB pairing, 32 MiB frames, 4 MiB other",
       StreamMessage.maxClientPayload == 1_048_576 && StreamMessage.maxPairingPayload == 4096
       && StreamMessage.maxFramePayload == 33_554_432 && StreamMessage.maxOtherHostPayload == 4_194_304)

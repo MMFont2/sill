@@ -4,7 +4,63 @@ import Foundation
 public enum StreamSource: Codable, Hashable {
     case none
     case window(UInt32)   // CGWindowID, stable for the life of the window
-    case desktop          // the Mac's main display
+    case desktop          // one of the Mac's displays, whole: the main one, or the one a pick names
+                          // (SourcePick, WindowList.desktopDisplay; issue #91)
+}
+
+/// A pick (kind 6): the source, and for the Desktop which of the Mac's displays (`DisplayInfo.id`,
+/// issue #91; docs/display-stepping-plan.md). On the wire it is `StreamSource`'s JSON with the
+/// display inside the Desktop's object, `{"desktop":{"display":69733632}}`; without a display it is
+/// exactly `StreamSource`'s, `{"desktop":{}}`. A host from before reads it as `StreamSource` and gets
+/// the Desktop (the synthesized decoder ignores keys it does not know in the Desktop's object). A
+/// device sends a display only to a host whose window list lists two or more displays; a display on
+/// another source is never written and is ignored when read, and one that is not a number reads as
+/// none.
+public struct SourcePick: Codable, Hashable {
+    public var source: StreamSource
+    /// The display the Desktop should show; nil: the main one (every device before issue #91).
+    public var display: UInt32?
+
+    public init(_ source: StreamSource, display: UInt32? = nil) {
+        self.source = source
+        self.display = source == .desktop ? display : nil
+    }
+
+    /// StreamSource's own keys, written by hand only for a Desktop that names its display.
+    private enum SourceKeys: String, CodingKey { case none, window, desktop }
+    private enum DesktopKeys: String, CodingKey { case display }
+
+    public init(from decoder: Decoder) throws {
+        source = try StreamSource(from: decoder)
+        guard source == .desktop,
+              let desktop = try? decoder.container(keyedBy: SourceKeys.self).nestedContainer(keyedBy: DesktopKeys.self, forKey: .desktop)
+        else { display = nil; return }
+        display = (try? desktop.decodeIfPresent(UInt32.self, forKey: .display)) ?? nil
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        guard source == .desktop, let display else { try source.encode(to: encoder); return }
+        var container = encoder.container(keyedBy: SourceKeys.self)
+        var desktop = container.nestedContainer(keyedBy: DesktopKeys.self, forKey: .desktop)
+        try desktop.encode(display, forKey: .display)
+    }
+}
+
+/// One of the Mac's displays, as a device steps the Desktop through them (issue #91;
+/// docs/display-stepping-plan.md). The shape pull request #66 gave its own (kind 40 there), so the
+/// two reconcile in code alone: `id` the display's CGDirectDisplayID, `name` macOS's for it
+/// (NSScreen's localizedName: "Built-in Retina Display", "LG UltraFine"), `width` and `height` its
+/// size in points (Double: a later host's fractional size never fails a device's decoding of the
+/// whole list), `main` true for the display with the menu bar.
+public struct DisplayInfo: Codable, Hashable, Sendable {
+    public var id: UInt32
+    public var name: String
+    public var width: Double
+    public var height: Double
+    public var main: Bool?
+    public init(id: UInt32, name: String, width: Double, height: Double, main: Bool? = nil) {
+        self.id = id; self.name = name; self.width = width; self.height = height; self.main = main
+    }
 }
 
 /// One on-screen Mac window, as the client sees it. WindowList order is stable: first seen first.
@@ -60,12 +116,23 @@ public struct WindowList: Codable {
     /// pull request #66's `Bool` (never released) does not decode here and becomes an Int as it
     /// rebases.
     public var clipboard: Int?
+    /// The Mac's displays, the main one first, then those to its right and then those to its left,
+    /// each left to right (never Sill's own virtual display): what a device's Desktop button steps
+    /// through (issue #91; docs/display-stepping-plan.md). Nil from every host before 2026-10-20
+    /// (whose Desktop is the display macOS lists first), and from one that cannot read its displays;
+    /// a device sends a display in its Desktop pick only to a host that lists two or more.
+    public var displays: [DisplayInfo]?
+    /// The display the Desktop shows: the one it streams while it streams, else the one it streamed
+    /// last (the last Desktop pick's), else the main one. Nil with `displays`.
+    public var desktopDisplay: UInt32?
 
     public init(macName: String, windows: [WindowInfo], active: StreamSource, launchID: String? = nil,
-                hostVersion: String? = nil, protocol: Int? = nil, gestures: Int? = nil, clipboard: Int? = nil) {
+                hostVersion: String? = nil, protocol: Int? = nil, gestures: Int? = nil, clipboard: Int? = nil,
+                displays: [DisplayInfo]? = nil, desktopDisplay: UInt32? = nil) {
         self.macName = macName; self.windows = windows; self.active = active; self.launchID = launchID
         self.hostVersion = hostVersion; self.protocol = `protocol`; self.gestures = gestures
         self.clipboard = clipboard
+        self.displays = displays; self.desktopDisplay = desktopDisplay
     }
 }
 
