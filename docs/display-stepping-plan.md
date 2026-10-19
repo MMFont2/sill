@@ -238,8 +238,63 @@ simulators private and deleted after, `simctl io screenshot` only; DerivedData i
 
 ## Results
 
-(Filled in as the steps run.)
+On this Mac (macOS 27, Xcode 27.1 27A9275), 2026-10-20, shared with other agents' builds and
+simulators: load averages of 400 to 1,000 throughout. Every host was `--synthetic` with
+`SILL_TEST_LOOPBACK=1 SILL_TEST_SOFTWARE_ENCODER=1 SILL_TEST_NO_ROUTER=1`, under a minute but for the
+live gates' (S2: five minutes), and was ended with SIGTERM: a job a script starts in the background
+inherits SIGINT ignored, and the CLI keeps an ignored signal ignored (`HostShutdown.installKeyRelease`,
+as for `nohup`), so a `kill -INT` there does nothing.
+
+- **H1, the builds.** `swift build -c release` from a clean `git archive` of 7cc8bcc: only the
+  CaptureProbe warning. The iOS app, `CODE_SIGNING_ALLOWED=NO`: Debug for the simulator as CI builds
+  it, Release for the simulator and Debug for a generic device, each built with only the known
+  `StreamClient` capture warning (StreamClient.swift:3830) and appintentsmetadataprocessor's
+  "Metadata extraction skipped" note.
+- **H2, the CLI against main's.** origin/main at 9a8e30c and this branch, each from `git archive`:
+  idle 35 s, the stdout identical masked and sorted (7 lines); with a client picking the Desktop for
+  12 s, every line but the `[1s]` stats identical in order (12 lines) and 13 stats lines each. In the
+  first pair one of the branch's seconds counted `net.dropped 1` (the loopback client slow to read at a
+  load average of 900); two more pairs had none in any of the four runs, the rest as before.
+- **H3, the check.** `Tests/checks/display-stepping`: 105 checks, among them 4,000 random sessions
+  (160,000 steps: 41,104 taps judged from the Desktop and 10,966 from a window, 23,440 older devices'
+  picks, 6,568 displays unplugged, 1,927 of them under the Desktop, 3,432 full turns); 42 of 42
+  mutants caught. The run that built it had one survivor ("none named: the first, not the main
+  one"); the case of the main display listed second catches it.
+- **H4, the wire.** `compatibility` 121 checks and 29 of 29 mutants; `protocol` 193 + 8; `clipboard`
+  259, and the two of its mutants that change the window list's initializer (one's pattern followed
+  the new parameters) caught. Every other `clipboard` mutant's pattern (72 in all) and every one of
+  `protocol`'s (24) is still found once in its file; their full runs were stopped at an hour's pace
+  for 72 compiles. v0.5.1's StreamProtocol (`git archive v0.5.1`), compiled with a reader of the
+  payloads the compatibility check writes: the window list with `displays` and `desktopDisplay`
+  decodes, and `{"desktop":{"display":69733632}}` reads as `.desktop`.
+- **H5.** `Tests/checks/run-all.sh`: RUNALL
+- **H6, the host's rules (`sillclient.py` against this branch's CLI).** `SILL_TEST_DISPLAYS=2`, the
+  client picking the Desktop, then `desktop:2` at 4 s, a bitrate at 8, `desktop` at 12 and
+  `desktop:99` at 16: "TEST: the Desktop is 2 test patterns (SILL_TEST_DISPLAYS), Test Pattern
+  1512×949, Test Pattern 2 1440×900.", then "Streaming a synthetic test pattern for Test Pattern (1
+  of 2) (software encoder) at 1512×948", "… for Test Pattern 2 (2 of 2) … at 1440×900", the bitrate's
+  restart on Test Pattern 2 at 25 Mbps, Test Pattern (1 of 2) for the pick that names none, and
+  "Desktop: display 99 is not connected; streaming Test Pattern (1 of 2), the main display."; every
+  window list `displays=1:Test Pattern:1512x949:main,2:Test Pattern 2:1440x900` with
+  `desktopDisplay` 1, 1, 2, 2, 1, 1 (the first before anything streamed). `SILL_TEST_DISPLAYS=3`, `desktop:2` at 4 s and `desktop:3` 20 ms
+  later, during the restart: Test Pattern 2, then Test Pattern 3 (3 of 3) once it had started.
+  `SILL_TEST_DISPLAYS=2@10` with `desktop:2` at 3 s: "TEST: Test Pattern 2 goes away
+  (SILL_TEST_DISPLAYS).", "Desktop: Test Pattern 2 is gone; streaming Test Pattern, the main display,
+  instead.", the stream's line as it always was (one display left), and the last list with one
+  display, `desktopDisplay` 1.
+- **H7, against v0.5.1's CLI.** `desktop:2` and `desktop:69733632` from the client: the Desktop
+  restarted for each (as any Desktop pick does there), nothing refused, its lists without
+  `displays`.
+- **S1, photos.** PHOTOS
+- **S2, live.** LIVE
+- **S3, against v0.5.1's host.** OLDHOST
+- **S4, VoiceOver's words.** AXDUMP
 
 ## Progress
 
-- 2026-10-20: the plan.
+- 2026-10-20: the plan; the wire, the host, the device, the check, the docs (4dbe37b to ec59d30),
+  the AX dump's hints (c56ed70); a run cut off by a usage limit and by CoreSimulatorService wedged
+  for two hours.
+- 2026-10-20, the next run: read what the first had built and kept it; main at 9a8e30c (#136)
+  merged in (ci.yml's matrix and CLAUDE.md's Layout, both sides kept); a stopped capture's display
+  read again before the restart (7cc8bcc); #173 in the plan; the Results.
