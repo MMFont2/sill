@@ -117,10 +117,11 @@ Sill has layouts of its own.
   your last device disconnects, or you quit Sill. If you moved it on your Mac
   meanwhile, it keeps its new place.
 - **Several displays**: the Desktop shows one of your Mac's displays at a
-  time, the one with the menu bar to begin with. When your Mac has more than
-  one, the Desktop button says which one you see, 1 of 2, and a tap while the
-  Desktop shows moves to the next. Every device connected sees the same one,
-  and if that display goes away, Sill shows the one with the menu bar.
+  time, your main display (System Settings › Displays) to begin with. When
+  your Mac has more than one, the Desktop button says which one you see, 1 of
+  2, and a tap while the Desktop shows moves to the next. Every device
+  connected sees the same one, and if that display goes away, Sill shows the
+  main display.
 - **The virtual display** (off by default) moves a window you stream onto a
   display of its own on your Mac, so it keeps updating when other windows
   cover it. It uses a private macOS API, which is one reason Sill for Mac comes
