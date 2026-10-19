@@ -4,10 +4,13 @@ import Foundation
 /// Mac window sized to it. Milestone 3's fallback path: rather than a virtual display, the host
 /// resizes the real window through Accessibility.
 ///
-/// `scale` is device points per Mac point for text. nil means "leave the Mac window alone"
-/// (the default today). 1.0 fits the window to the panel at 1:1 points; 1.5 makes the window a
-/// third smaller in Mac points so its content renders a third larger on the device; 0.8 the
-/// reverse. Apps have minimum window sizes; the host clamps and streams whatever it actually got.
+/// `scale` is device points per Mac point for text: Aa on the device. 1.0 fits the window to the
+/// panel at 1:1 points; 1.5 makes the window a third smaller in Mac points so its content renders a
+/// third larger on the device; 0.8 the reverse. Apps have minimum window sizes; the host clamps and
+/// streams whatever it actually got. nil (Aa not used yet): a host with Fit windows to the device's
+/// screen on, the default since issue #70 (FitPolicy), fits the window at 1.0 all the same; with it
+/// off, and on a host before it, the Mac window is left alone. The virtual display has always
+/// counted nil as 1.0.
 public struct Viewport: Codable, Hashable {
     public var width: Double
     public var height: Double

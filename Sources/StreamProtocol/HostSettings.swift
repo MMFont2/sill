@@ -89,10 +89,19 @@ public struct RunningStream: Codable, Hashable, Sendable {
     /// The encoder's target (per-60 bitrate × fps / 60), whole Mbps.
     public var mbps: Int
     public var onVirtualDisplay: Bool
+    /// The Mac sizes the streamed window to the device's panel (issue #70; FitPolicy.fitsPanel on the
+    /// host): a window on the virtual display, or one in regular mode with Aa set or with the Mac's
+    /// Fit windows to the device's screen on, so the device knows the window takes its pane's shape
+    /// even while its own Aa is unset (the iPhone Duo open flat keeps its 16:10 pane:
+    /// DuoPosture.fitsWindowToPane). False for the Desktop and for a window the Mac leaves alone; nil
+    /// from a host before it, which fits a window only once the device's Aa is set or on the virtual
+    /// display. Optional, as every field added later.
+    public var fitsPanel: Bool?
 
-    public init(width: Int, height: Int, fps: Int, mbps: Int, onVirtualDisplay: Bool) {
+    public init(width: Int, height: Int, fps: Int, mbps: Int, onVirtualDisplay: Bool, fitsPanel: Bool? = nil) {
         self.width = width; self.height = height; self.fps = fps; self.mbps = mbps
         self.onVirtualDisplay = onVirtualDisplay
+        self.fitsPanel = fitsPanel
     }
 }
 

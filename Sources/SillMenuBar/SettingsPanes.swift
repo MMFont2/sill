@@ -308,6 +308,13 @@ private struct StreamingPane: View {
             } footer: {
                 Footnote("Lower latency when the Mac is busy, at a softer picture.")
             }
+            // Issue #70 (FitPolicy): at once, no restart of its own; the window that streams is fitted,
+            // or goes back, and the stream follows its new size.
+            Section {
+                Toggle("Fit windows to the device’s screen", isOn: $settings.config.fitWindows)
+            } footer: {
+                Footnote("A window you pick on your iPhone or iPad is resized here to fill the device’s screen, its text at the size it has on this Mac, and goes back to its own size when it stops streaming. Aa on the device makes the text larger or smaller. When this is off, a window keeps its size until Aa is used. With Virtual Display on, windows fit either way.")
+            }
             if let snapshot = model.coordinator?.status.snapshot, snapshot.softwareEncoder {
                 Section {
                     Label(snapshot.hardwareEncoderStuck

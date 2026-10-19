@@ -172,6 +172,14 @@ package final class StreamCoordinator {
     /// issue #57): recorded at the first fit (`fitToViewport`), put back when the window stops
     /// streaming (`restoreFits`), handed to the virtual display's stage when it takes the window.
     private var fits = WindowRestore.Ledger<WindowSizer.Placement>()
+    /// A fit that left its window short of the size asked (an app at its minimum, a window that cannot
+    /// be resized or is in full screen, an app that did not answer) is not asked for again while the
+    /// window is where it left it (FitPolicy.Asks): a device re-sends its viewport whenever its pointer
+    /// shows or hides.
+    private var fitAsks = FitPolicy.Asks()
+    /// Fit windows to the device's screen changed (`adopt`): the window that streams is fitted, or goes
+    /// back, once no switch is in flight (`applyFitSetting`; select's defer comes back to it).
+    private var fitSettingChanged = false
     /// The window streaming in regular mode was in full screen when the catalog last listed it (its
     /// frame covered a display), or when it was picked: off the list, it may be leaving full screen
     /// (`windowsChanged`, WindowRestore.keepsStreaming).
@@ -420,7 +428,7 @@ package final class StreamCoordinator {
                 let wasEmpty = self.catalog.clientCount == 0
                 self.catalog.clientCount = count          // the catalog idles itself at 0
                 // Nobody is watching: stop capturing and encoding. The next client picks afresh.
-                if count == 0 { self.viewport = nil; self.clientFPS = [:] }   // the next device starts from scratch
+                if count == 0 { self.viewport = nil; self.clientFPS = [:]; self.fitAsks = FitPolicy.Asks() }   // the next device starts from scratch
                 if count == 0 { self.gestureChords.forget() }                 // and did not open a view it could close
                 // On the software encoder, the hardware is checked only while someone watches.
                 if count == 0 { self.stopRecheck() } else { self.devicesPresent(firstArrived: wasEmpty) }
@@ -595,6 +603,9 @@ package final class StreamCoordinator {
         if config.directWireless {
             print("Direct wireless connection on: also advertised over peer-to-peer Wi-Fi (AWDL), which takes this Mac's Wi-Fi off its channel for up to ~100 ms twice a second.")
         }
+        // The only startup line Fit windows to the device's screen adds, and only while it is off
+        // (SillHost --no-fit, or Sill.app's switch off).
+        if !config.fitWindows { print(FitPolicy.offLine) }
         if let testMenuLine { print(testMenuLine) }   // TEST ONLY, and only with SILL_TEST_MENU_PID set
         server.start()
         remote?.apply(config)        // the remote door, when Remote Access is on (or a pairing window opens later)
@@ -769,6 +780,33 @@ package final class StreamCoordinator {
         if !old.virtualDisplay && next.virtualDisplay { enableVirtualDisplay() }
         status.update { $0.virtualDisplayOn = next.virtualDisplay }
         print("Settings: " + old.changes(to: next))
+        // Not the pipeline's either: the window that streams is fitted now, or goes back now, once no
+        // switch is in flight (inside `select` the Task finds `switching` set and its defer comes back).
+        if old.fitWindows != next.fitWindows {
+            fitSettingChanged = true
+            Task { @MainActor in await self.applyFitSetting() }
+        }
+    }
+
+    /// Fit windows to the device's screen changed (`adopt`; FitPolicy.afterSettingChange): turned on,
+    /// the window streaming in regular mode with Aa unset is fitted at 1× now; turned off, the fit the
+    /// setting made goes back now, by WindowRestore's rules ("Restored …", or left with its line). A
+    /// window Aa sized keeps Aa's fit either way. The catalog's resize check then restarts the stream at
+    /// the window's new size. Runs once no switch is in flight: select's defer calls it again.
+    private func applyFitSetting() async {
+        guard fitSettingChanged, !switching, !shuttingDown else { return }
+        fitSettingChanged = false
+        defer { noteFitsPanel() }
+        guard case .window(let id) = active, !(virtualDisplay && stage.isStaged) else { return }
+        switch FitPolicy.afterSettingChange(fitWindows: config.fitWindows, scale: viewport?.scale, fitted: fits.record(id) != nil) {
+        case .fitNow:
+            await applyViewportToActiveWindow()
+        case .putBack:
+            restoreFits(keeping: nil)
+            await catalog.refreshWindows()
+        case .nothing:
+            break
+        }
     }
 
     /// Settings › Virtual Display › Try Again: clear a run-level disable, and stage the streamed
@@ -1106,27 +1144,50 @@ package final class StreamCoordinator {
 
     // MARK: Fitting the window to the client
 
-    /// Resizes the streamed window to the client's panel at its text scale, if one is set and the
-    /// window is not already there. Returns the size the window actually took, or nil if nothing
-    /// changed. Mac points throughout: the panel in device points divided by the scale (device
-    /// points per Mac point). Scale nil means leave the window alone, and so is a window in full
-    /// screen (WindowRestore.fit). Every resize the app took, or left unanswered (a busy app may take
-    /// it later), is a fit for `fits`: the window goes back to its own frame when it stops streaming
-    /// (`restoreFits`, issue #57). None once the host is shutting down: nothing would put it back.
+    /// Resizes the streamed window to the client's panel at its text scale, if a fit applies and the
+    /// window is not already there (FitPolicy: Aa's scale; with Aa unset, 1× while Fit windows to the
+    /// device's screen is on, issue #70). Returns the size the window actually took, or nil if nothing
+    /// changed. Mac points throughout: the panel in device points divided by the scale (device points
+    /// per Mac point). No fit leaves the window alone (Aa unset with the setting off), and so is a
+    /// window in full screen (WindowRestore.fit). A fit that left the window short of the size asked is
+    /// not asked for again while the window is where it left it (`fitAsks`). Every resize the app took, or left unanswered (a busy
+    /// app may take it later), is a fit for `fits`: the window goes back to its own frame when it stops
+    /// streaming (`restoreFits`, issue #57). None once the host is shutting down: nothing would put it
+    /// back.
     private func fitToViewport(_ window: SCWindow) -> CGSize? {
-        guard !shuttingDown, let v = viewport, let textScale = v.scale, textScale > 0, v.width > 0, v.height > 0 else { return nil }
-        let target = CGSize(width: (v.width / textScale).rounded(), height: (v.height / textScale).rounded())
+        guard !shuttingDown, let v = viewport, let fit = currentFit() else { return nil }
+        let target = fit.size
         let current = Self.liveBounds(of: window.windowID)?.size ?? window.frame.size
-        if abs(current.width - target.width) <= 2, abs(current.height - target.height) <= 2 { return nil }
-        guard let fit = sizer.resize(window: window, to: target) else { return nil }
-        fits.fitted(window.windowID, handle: fit.placement, before: fit.before, after: fit.after, asked: target)
-        let actual = fit.after.size
-        // Asked again for a size the app already refused (its minimum): nothing moved.
-        guard abs(actual.width - current.width) >= 1 || abs(actual.height - current.height) >= 1 else { return nil }
+        guard FitPolicy.needsResize(current: current, target: target),
+              fitAsks.shouldAsk(window: window.windowID, target: target, current: current) else { return nil }
+        let result = sizer.resize(window: window, to: target)
+        if let result { fits.fitted(window.windowID, handle: result.placement, before: result.before, after: result.after, asked: target) }
+        let actual = result?.after.size ?? current
+        fitAsks.asked(window: window.windowID, target: target, after: actual)
+        // Refused, full screen, at its minimum, not answered yet: nothing moved.
+        guard FitPolicy.moved(from: current, to: actual) else { return nil }
         Stats.shared.bump("win.resized")
-        print("Resized \(window.owningApplication?.applicationName ?? "?") to \(Int(actual.width))×\(Int(actual.height)) pt "
-              + "(asked \(Int(target.width))×\(Int(target.height)) for a \(Int(v.width))×\(Int(v.height)) panel at \(textScale)×)")
+        print(FitPolicy.resizedLine(app: window.owningApplication?.applicationName ?? "?", took: actual, fit: fit,
+                                    panel: CGSize(width: v.width, height: v.height)))
         return actual
+    }
+
+    /// The fit the last viewport asks of a window streaming in regular mode now (FitPolicy.fit), with
+    /// the running settings' Fit windows to the device's screen; nil: leave the window alone.
+    private func currentFit() -> FitPolicy.Fit? {
+        guard let v = viewport else { return nil }
+        return FitPolicy.fit(panel: CGSize(width: v.width, height: v.height), scale: v.scale, fitWindows: config.fitWindows)
+    }
+
+    /// Kind 16's `stream.fitsPanel` as it stands now (FitPolicy.fitsPanel): the running stream's, after
+    /// a viewport or Fit windows to the device's screen changed while it runs. A restart sets it anew
+    /// (`startPipeline`). Publishes only a change (status.onChange).
+    private func noteFitsPanel() {
+        guard let stream = status.snapshot.stream else { return }
+        var window = false
+        if case .window = active { window = true }
+        let now = FitPolicy.fitsPanel(window: window, onVirtualDisplay: stream.onVirtualDisplay, fit: currentFit())
+        if stream.fitsPanel != now { status.update { $0.stream?.fitsPanel = now } }
     }
 
     /// A new viewport while a window streams. The encoder is fixed to the old size, but the
@@ -1153,6 +1214,7 @@ package final class StreamCoordinator {
         }
         guard case .window(let id) = active, let w = catalog.window(id: id) else { return }
         if fitToViewport(w) != nil { await catalog.refreshWindows() }
+        noteFitsPanel()   // Aa set or unset with the setting off: the device's pane follows (DuoPosture)
     }
 
     /// `--virtual-display`: how big the window should be on the virtual display and how big the
@@ -1206,6 +1268,7 @@ package final class StreamCoordinator {
         guard !switching, !shuttingDown else { return }
         switching = true
         if source != active { missingPolls = 0 }    // a window's looks off the list are its own
+        if bringForward { fitAsks = FitPolicy.Asks() }   // a pick asks again what a fit left short (a busy app may answer now)
         restartOf = (source == active && source != .none) ? source : nil
         defer {
             switching = false
@@ -1238,6 +1301,8 @@ package final class StreamCoordinator {
             // Settings, or a flip between the home and the away quality, that came in meanwhile; a
             // no-op when the pick's select commits them first.
             if pendingConfig != nil || (awayWanted != awayRunning && flipWait == nil) { Task { @MainActor in await self.applyPending() } }
+            // Fit windows to the device's screen changed during the switch (`adopt`): applied now.
+            if fitSettingChanged { Task { @MainActor in await self.applyFitSetting() } }
             // A stream that did not start (its window gone, capture refused): nothing streams, so
             // the links have nothing to be judged at, and a window sized for it goes back.
             if active == .none { judgeLinks(nil); restoreFits(keeping: nil) }
@@ -1479,10 +1544,13 @@ package final class StreamCoordinator {
         encoder = enc
         active = source
         print("Streaming \(describe) at \(width)×\(height), \(fps) fps, \(streamBitrate / 1_000_000) Mbps")
+        var window = false
+        if case .window = source { window = true }
+        let fitsPanel = FitPolicy.fitsPanel(window: window, onVirtualDisplay: sourceRect != nil, fit: currentFit())
         status.update {
             $0.stream = HostStatusSnapshot.Stream(kind: kind, title: title, width: width, height: height, fps: fps,
                                                   mbps: streamBitrate / 1_000_000, onVirtualDisplay: sourceRect != nil,
-                                                  softwareEncoder: useSoftwareEncoder)
+                                                  softwareEncoder: useSoftwareEncoder, fitsPanel: fitsPanel)
         }
         // Frames can reach the encoder while `capture.start` is still awaiting, so its watchdog
         // may already have fired, and that report was ignored (no current encoder yet).

@@ -10,12 +10,14 @@ struct MenuEntry: Equatable {
     enum Action: Equatable {
         case none
         case allowScreenRecording, allowAccessibility, openPrivacy
-        /// These two are absolute, like the radio items: each sets what the item offered when the
+        /// These are absolute, like the radio items: each sets what the item offered when the
         /// menu was built (on when it showed unchecked). A device can change the setting while the
         /// menu is open, which does not rebuild it, and a toggle would then do the opposite of what
         /// the item shows.
         case setVirtualDisplay(Bool)
         case setDirectWireless(Bool)
+        /// Fit Windows to the Device’s Screen (issue #70), absolute like the two above.
+        case setFitWindows(Bool)
         case setMaxFPS(Int), setBitrate(Int), setCaptureScale(CGFloat)
         case toggleLaunchAtLogin
         case showLog, showSettings, quit
@@ -84,6 +86,11 @@ enum MenuBuilder {
 
         menu.append(MenuEntry(kind: .item, title: "Virtual Display", subtitle: p.virtualDisplayNote,
                               checked: config.virtualDisplay, action: .setVirtualDisplay(!config.virtualDisplay)))
+        // Beside the virtual display, the other way a window takes the device's size (issue #70): here
+        // as well as in Settings because it changes every pick, and turning it off is one click.
+        menu.append(MenuEntry(kind: .item, title: "Fit Windows to the Device’s Screen",
+                              subtitle: "Picked windows take the device’s size while they stream",
+                              checked: config.fitWindows, action: .setFitWindows(!config.fitWindows)))
         menu.append(MenuEntry(kind: .item, title: "Frame Rate", children: [60, 120].map { fps in
             MenuEntry(kind: .item, title: "Up to \(fps) fps", checked: config.maxFPS == fps, action: .setMaxFPS(fps))
         }))
@@ -290,6 +297,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         case .openPrivacy: model.permissions.openPrivacyPane()
         case .setVirtualDisplay(let on): model.settings.config.virtualDisplay = on
         case .setDirectWireless(let on): model.settings.config.directWireless = on
+        case .setFitWindows(let on): model.settings.config.fitWindows = on
         case .setMaxFPS(let fps): model.settings.config.maxFPS = fps
         case .setBitrate(let bitrate): model.settings.config.bitrate = bitrate
         case .setCaptureScale(let scale): model.settings.config.captureScale = scale

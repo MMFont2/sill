@@ -40,6 +40,11 @@ config.directWireless = CommandLine.arguments.contains("--direct-wireless")
 // A --synthetic host shares a pasteboard of its own, never this Mac's clipboard.
 config.shareClipboard = !CommandLine.arguments.contains("--no-clipboard")
 
+// `SillHost --no-fit`: a window a device picks keeps its size on this Mac until the device's Aa sets
+// one, as before issue #70 (one line at launch says so). On by default, as in Sill.app: a picked window
+// takes the device's panel at 1× (FitPolicy) and goes back to its own frame when it stops streaming.
+config.fitWindows = !CommandLine.arguments.contains("--no-fit")
+
 // `SillHost --remote[=PORT]`: the remote door for this run (TLS 1.3, paired devices only), on
 // PORT or any free port, so it never collides with Sill.app's 7455. A new in-memory identity and
 // trust list every run. A pairing window is always open (a fresh one after each use or expiry);

@@ -207,6 +207,14 @@ extension DuoPosture {
         guard !fitsWindowToPane, video.width > 0, video.height > 0 else { return defaultAspect }
         return video.width / video.height
     }
+
+    /// `paneAspect`'s `fitsWindowToPane`: a window streams (never the Desktop) and the Mac fits it to
+    /// the pane, because Aa is set (`textScale`), it is on the virtual display, or the Mac says it fits
+    /// it (kind 16's `stream.fitsPanel`: Fit windows to the device's screen, issue #70, with Aa unset;
+    /// nil from a Mac before it, which fits a window only once Aa is set).
+    static func fitsWindowToPane(window: Bool, textScale: Double?, onVirtualDisplay: Bool, macFitsPanel: Bool?) -> Bool {
+        window && (textScale != nil || onVirtualDisplay || macFitsPanel == true)
+    }
 }
 
 // MARK: - The book pose: the fold down the middle of a screen held sideways

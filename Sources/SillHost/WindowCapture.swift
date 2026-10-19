@@ -25,6 +25,12 @@ final class WindowCapture: NSObject, SCStreamOutput, SCStreamDelegate {
         let config = SCStreamConfiguration()
         config.width = width
         config.height = height
+        // A source with fewer pixels than asked (a window or the Desktop on a 1× display at Retina,
+        // which asks for twice its points) is scaled up to fill the frame. ScreenCaptureKit's default
+        // only scales down (SCStream.h), which left it in the frame's top-left corner with black
+        // around it, while the device maps its touches onto the whole frame (closed PR #149, nacben;
+        // Tests/capture-fit). A source with as many pixels as asked or more is drawn as before.
+        config.scalesToFit = true
         config.pixelFormat = kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
         config.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(fps))
         config.queueDepth = 5   // headroom: a wedged encoder may keep one buffer forever

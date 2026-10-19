@@ -92,12 +92,16 @@ package struct HostStatusSnapshot: Equatable {
         /// Captured from the virtual display (the window was staged there).
         package var onVirtualDisplay: Bool
         package var softwareEncoder: Bool
+        /// The Mac sizes the streamed window to the device's panel (FitPolicy.fitsPanel): kind 16's
+        /// `stream.fitsPanel`. Follows a change of Fit windows to the device's screen, or of the scale,
+        /// while the window streams (StreamCoordinator.noteFitsPanel).
+        package var fitsPanel: Bool
 
         package init(kind: Kind, title: String, width: Int, height: Int, fps: Int, mbps: Int,
-                     onVirtualDisplay: Bool, softwareEncoder: Bool) {
+                     onVirtualDisplay: Bool, softwareEncoder: Bool, fitsPanel: Bool = false) {
             self.kind = kind; self.title = title; self.width = width; self.height = height
             self.fps = fps; self.mbps = mbps; self.onVirtualDisplay = onVirtualDisplay
-            self.softwareEncoder = softwareEncoder
+            self.softwareEncoder = softwareEncoder; self.fitsPanel = fitsPanel
         }
     }
 
@@ -143,7 +147,7 @@ package struct HostStatusSnapshot: Equatable {
 extension HostStatusSnapshot.Stream {
     /// The running pipeline as a device sees it (kind 16's `stream`).
     var wire: RunningStream {
-        RunningStream(width: width, height: height, fps: fps, mbps: mbps, onVirtualDisplay: onVirtualDisplay)
+        RunningStream(width: width, height: height, fps: fps, mbps: mbps, onVirtualDisplay: onVirtualDisplay, fitsPanel: fitsPanel)
     }
 }
 

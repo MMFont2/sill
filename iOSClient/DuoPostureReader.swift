@@ -201,11 +201,14 @@ extension PortraitMetrics {
 
 extension StreamClient {
     /// The Duo open flat, upright: the picture pane's shape (DuoPosture.paneAspect). The Mac fits a
-    /// window to the pane once Aa is set, or on the virtual display; never the Desktop.
+    /// window to the pane once Aa is set, on the virtual display, and with Aa unset while its Fit
+    /// windows to the device's screen is on (kind 16's `stream.fitsPanel`, issue #70); never the Desktop.
     func duoPaneAspect(textScale: Double?) -> CGFloat {
         var window = false
         if case .window = active { window = true }
-        let fitted = window && (textScale != nil || settings.host?.stream?.onVirtualDisplay == true)
+        let stream = settings.host?.stream
+        let fitted = DuoPosture.fitsWindowToPane(window: window, textScale: textScale,
+                                                 onVirtualDisplay: stream?.onVirtualDisplay == true, macFitsPanel: stream?.fitsPanel)
         return DuoPosture.paneAspect(video: videoSize, fitsWindowToPane: fitted)
     }
 }
