@@ -9,7 +9,7 @@ Formerly winstream; the folder still carries the old name.
 ## Current step
 
 **Apple Pencil pressure and tilt (2026-10-20, branch `pencil-pressure-rebased` from main at d1fa97e,
-main at 9a8e30c merged in since: Hunter Ahlquist's `pencil-pressure` (HunterAhlquist/sill at a85fba7;
+main at 68e880e merged in since: Hunter Ahlquist's `pencil-pressure` (HunterAhlquist/sill at a85fba7;
 issue #81) merged as it is, his five commits keeping their authorship, then the maintainer's;
 docs/pencil-pressure-plan.md has the plan, the open questions with their defaults, every result and the
 rebase).** Noah: "Work on Apple Pencil pressure (the contributor's work needs a free message number, 44

@@ -725,7 +725,8 @@ above, since every lower one is now claimed by open pull requests)." The branch
 the stale hover of "The line back to the start" on main's mouse path alone (`pencilTouching`), so it
 can land ahead of the rest. Then Hunter's five commits, merged as they are (328314f: never rebased
 or squashed, each keeping its author), then the maintainer's commits, and main again at 9a8e30c
-(#136; only ci.yml's matrix conflicted).
+(#136; only ci.yml's matrix conflicted) and at 68e880e (#110, Shift+Return and Shift+Tab: no
+conflict, its key paths in InputOverlay.swift apart from the Pencil's).
 
 The merge: eighteen files conflicted, every resolution keeping both sides. Main had gained the
 clipboard (#78), the hardware keyboard and trackpad (#80) and Larger Picture (#79) since 985a733:
@@ -771,12 +772,13 @@ Verified (2026-10-20, on a Mac busy with other sessions, load averages of 30 to 
 - **Builds.** `swift build -c release` from `git archive` of the branch, only the CaptureProbe
   warning; the iOS app for the simulator in Debug (CI's command) and Release and for a generic device
   in Debug, only the known StreamClient capture warning, PenStrokes.swift compiled and no file
-  skipped. 593cc12 alone builds too (Debug, the simulator).
+  skipped. 593cc12 alone builds too (Debug, the simulator). After main at 68e880e (#110) the three
+  iOS builds again, the same, and `swift build -c release`.
 - **`SillHost --pen-selftest`:** 37 ok, "All readings are what was written.", nothing posted.
 - **The checks.** `Tests/checks/run-all.sh`, all 46 (#136's `installed-apps` among them). `pen` 197
   checks and 5,000 random sessions, 92 of 92 mutants; `compatibility` 157, 41 of 41;
   `pointer-control` 158, 33 of 33; `protocol` 193 and the 8 cross-checks, 24 of 24; `menus` 309,
-  43 of 43; `fence` its 17 modes, 33 of 33; `clipboard` 259; `key-strokes` 347;
+  43 of 43; `fence` its 17 modes, 33 of 33; `clipboard` 259; `key-strokes` 347 (353 after #110);
   `pointer-presence` 165; `gestures` 156; `message-reader`; `hardware-keyboard` 51.
 - **H4**, the CLI's stdout against main's (9a8e30c; both from `git archive`, `--synthetic` on
   loopback with the software encoder): idle for 35 s identical masked and sorted (7 lines); with a
