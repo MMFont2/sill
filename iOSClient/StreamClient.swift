@@ -925,11 +925,13 @@ final class StreamClient: ObservableObject {
             self.appInForeground = false
             self.awaySpell = GoodbyePolicy.enteredBackground(connected: self.connected, current: self.awaySpell)
         }
+        #if canImport(UIKit)
         // A device with a passcode locks its data shortly after it locks; Sill may already be
         // suspended then, so a spell can read "in the background" though the device locked.
         NotificationCenter.default.addObserver(forName: UIApplication.protectedDataWillBecomeUnavailableNotification, object: nil, queue: .main) { [weak self] _ in
             self?.awaySpell?.locked = true
         }
+        #endif
         // The clipboard's chip looks when Sill becomes active (StreamClient+Clipboard).
         observeClipboardActivation()
     }
