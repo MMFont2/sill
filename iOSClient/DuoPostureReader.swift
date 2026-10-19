@@ -163,7 +163,7 @@ private struct DuoLogger: ViewModifier {
 
     func body(content: Content) -> some View {
         #if DEBUG
-        content.onChange(of: line, initial: true) { _, now in
+        content.sillOnChange(of: line, initial: true) { _, now in
             if known { print("duo: \(screen): \(now)") }
         }
         #else
