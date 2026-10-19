@@ -58,7 +58,9 @@ Additive both ways; no new kind (29–31 and 33–44 stay where open pull reques
     cannot read its displays (no Screen Recording). A synthetic host lists its test pattern as one
     display (or more, TEST ONLY: `SILL_TEST_DISPLAYS`, below).
   - `desktopDisplay: UInt32?` — the display the Desktop shows: the one it streams while it
-    streams, else the one it streamed last (the last Desktop pick's), else the main one.
+    streams, else the one it streamed last (the last Desktop pick's), else the main one. The run's
+    brief asked for this as a flag on each entry ("whether it is the one the Desktop streams now");
+    one key beside the list says the same once, in #66's shape, and cannot name two.
 - **Kind 6, a pick** (JSON `StreamSource`): the Desktop's object may carry the display,
   `{"desktop":{"display":69733632}}`. `SourcePick` (Switcher.swift) writes and reads it; without a
   display it writes exactly `{"desktop":{}}`, byte for byte what `StreamSource.desktop` writes.
@@ -85,7 +87,10 @@ Additive both ways; no new kind (29–31 and 33–44 stay where open pull reques
    display."). The pick sets the Desktop's display for every device (`desktopDisplay`).
 3. **Restarts keep it.** A settings change, a rate change, the encoder's fallback or return, a
    viewport: the Desktop restarts on its display. Picking a window keeps it too, so the Desktop
-   button, and a pick of the Desktop that names it, go back to it.
+   button, and a pick of the Desktop that names it, go back to it. A pick that named none keeps
+   meaning the main display: after the main display changes (System Settings › Displays, the menu
+   bar dragged to another), a restart shows the new main one, as a pick from a device from before
+   would.
 4. **A pick of another display during a restart of the Desktop** waits for that restart and runs
    after it (the rule picks of another source follow, `handlePick`); one of the display being
    restarted needs nothing.
@@ -169,17 +174,44 @@ Additive both ways; no new kind (29–31 and 33–44 stay where open pull reques
   #156's second tap on Desktop (its full screen) is out since Noah's word on #92 (a Settings toggle and
   a shake), so a tap while the Desktop streams is free for the next display.
 - **#158** (visionOS, a coordinator per session): each would keep its own Desktop display.
-- **#173** (addhumal, opened 2026-10-19, "Closes #91"): the same decision built separately, so only
-  one of the two should land. Its wire is this one's but for the pick: the same `DisplayInfo`,
-  `displays` and `desktopDisplay` (#66's shape), and the display beside the Desktop's object,
-  `{"desktop":{},"display":N}` (`DesktopPick`), which a host from before also reads as the Desktop.
-  Where its rules differ, read from its diff: the displays go main first, then by display ID rather
-  than by where they stand; the label is "Desktop 1", "Desktop 2" in "Desktop"'s place (this
-  branch's "1 of 2" is narrower and says how many there are); VoiceOver hears "Built-in Retina
-  Display (1 of 2), showing now. Tap for Studio Display."; a pick without a display (a device from
-  before, or this device's own requests) keeps the display picked last rather than the main one; no
-  line names the display, and a display that goes while the Desktop shows it ends the stream until
-  the device asks for the Desktop again. Its check: eight cases in `compatibility`.
+- **#173** (addhumal, opened 2026-10-19 at f1189e7, "Closes #91"): the same decision built
+  separately, so only one of the two should land. Read from its diff (nine files, 199 lines added):
+  - *The wire.* The same `DisplayInfo`, `displays` and `desktopDisplay` (#66's shape, as here), so a
+    device of either reads the other's lists. The pick differs: #173 puts the display beside the
+    Desktop's object, `{"desktop":{},"display":N}` (`DesktopPick`), this branch inside it,
+    `{"desktop":{"display":N}}` (`SourcePick`). A host from before reads either as the Desktop (the
+    synthesized decoder ignores keys it does not know at both levels), and neither host reads the
+    other's: a device of one against a host of the other steps nothing, its taps showing the
+    Desktop.
+  - *The label.* #173: "Desktop 1", "Desktop 2" in "Desktop"'s place, which says which display but
+    not that there is another; VoiceOver "Built-in Retina Display (1 of 2), showing now. Tap for
+    Studio Display." (the gesture named), "Show Built-in Retina Display (1 of 2)" from a window.
+    Here: "1 of 2", which says which and of how many (Noah: "when there is another one it says so"),
+    narrower in the phone's 42 pt buttons; VoiceOver "Desktop, Built-in Retina Display, 1 of 2" with a
+    hint in Apple's form. With one display both are today's button.
+  - *The rules.* #173 orders the displays main first, then by display ID (here: by where they
+    stand, so a tap moves one display to the right). A pick without a display (a device from before,
+    and #173's own automatic Desktop requests, which never name one) keeps the display picked last
+    (here: the main display, as before #91). No line says which display streams. A display that goes
+    while the Desktop shows it ends the stream (the capture stops and nothing streams) until the
+    device asks for the Desktop again, and the catalog's next look names the main display in the list
+    while the old capture may still run (here: the main display at once, with a line). A pick of
+    another display while the Desktop restarts is queued as `.desktop`, which select's defer drops
+    because the Desktop is what streams, so the list can name a display the stream does not show
+    (here: a pick of another display waits for the restart and runs after it, rule 4). Two quick
+    taps step once (the second reads the Mac's list before it changes) and restart the Desktop twice
+    (here: a pick stands, device rule 6).
+  - *What backs it.* #173: eight cases and five mutants in `compatibility`, the builds; no rule of
+    the host's or the device's in a check, no test host with two displays, no live run, no docs.
+    Here: `display-stepping` (105 checks, 42 mutants, 4,000 random sessions through a model of a Mac
+    and its devices), `compatibility` and `protocol`, `SILL_TEST_DISPLAYS`, the live gates below, the
+    docs and the site's words.
+  - *Which should land.* This branch: it does what Noah decided on #91 in every bar, keeps every
+    device from before on the main display as today, and its host rules hold through restarts and
+    unplugging. #173's author got there first, so the pull request for this branch credits the
+    report and #173 (Noah's call whether to close #173 in its favour). Were #173 to land instead, it
+    would need the label to say how many ("1 of 2"), the dropped pick during a restart fixed, the
+    fallback when a display goes, and the docs.
 
 ## Open questions for Noah (the default is taken unless Noah says otherwise)
 
