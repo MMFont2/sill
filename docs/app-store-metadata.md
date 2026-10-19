@@ -414,7 +414,9 @@ The next version's, a draft: what changed on the device since 0.5.1 (4), as its 
 a paragraph a change (the same in the local-only build).
 
 ```text
-Larger Picture, in Settings on iPhone: held upright, a window’s picture takes the place of the window thumbnails and reaches down to where the keyboard comes up. Set a window’s text size with Aa and your Mac makes it as tall as the picture. The Desktop keeps the usual layout.
+A window you pick now fills your iPhone or iPad’s screen: your Mac resizes it to your device, with its text at the size it has on your Mac, and puts it back when you’re done. Aa makes the text larger or smaller. To keep windows at their own size, turn off Fit windows to the device’s screen in Sill for Mac’s Settings. Update Sill for Mac too.
+
+Larger Picture, in Settings on iPhone: held upright, a window’s picture takes the place of the window thumbnails and reaches down to where the keyboard comes up, and your Mac makes the window as tall as the picture. The Desktop keeps the usual layout.
 
 With a keyboard attached to your iPhone or iPad, what you type goes to your Mac as soon as its picture shows, Esc included, without the Keyboard button. Two fingers on a trackpad, or a mouse’s scroll wheel, now scroll the window under the pointer.
 
@@ -424,6 +426,12 @@ Fixed: after Sill sat in the background for hours, it could stop finding your Ma
 Esc and scrolling with a trackpad or a mouse showed on the iPad through Universal Control on 2026-10-15
 (docs/hardware-keyboard-plan.md, "Words that wait for a device"), so their words are in: this draft, the
 description's keyboard bullet, README's How it works and the support page.
+
+The first paragraph, and "your Mac makes the window as tall as the picture" (it said "Set a window’s text
+size with Aa and your Mac makes it as tall as the picture"), are a picked window fitted by default's
+(issue #70, docs/fit-by-default-plan.md), which is Sill for Mac's: with an older Sill for Mac a window keeps
+its size until Aa is used. If that change does not ship with this version, take both out. The description's
+"Aa makes text larger or smaller" holds either way.
 
 ## 6. Export compliance (encryption)
 

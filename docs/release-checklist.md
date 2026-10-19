@@ -135,6 +135,16 @@ serves the root or `/docs`, never `/site`. So:
   privacy.html's log line ("which devices share the clipboard", true of the builds out too, as "what
   you copy" in its lede and "never what you copy" in both log lines are). The release that ships it
   deletes the markers in `site/` and keeps the words.
+- The words for fitting a picked window by default (issue #70) are marked too, in support.html, between
+  `<!-- Fit windows` and `<!-- /Fit windows -->`. A block that changed words holds the old ones in its opening comment
+  (`<!-- Fit windows, was: OLD -->NEW<!-- /Fit windows -->`): for a republish before that release the
+  second perl line below puts them back and deletes the blocks that only add (`<!-- Fit windows: … -->`),
+  after which `grep -c "Fit windows" ../sill-site/support.html` prints 0. The release that ships it
+  deletes the comments in `site/` and keeps the new words:
+
+  ```
+  perl -0pi -e 's/<!-- Fit windows, was: .*? -->//gs; s/<!-- Fit windows: .*? -->//gs; s/<!-- \/Fit windows -->//g' site/support.html
+  ```
 - Once sill is public, it can serve the site itself: `git subtree push --prefix site origin gh-pages`,
   then Settings › Pages › gh-pages, / (root). Retire sill-site then.
 
@@ -142,6 +152,7 @@ serves the root or `/docs`, never `/site`. So:
 git clone https://github.com/Saffsanity/sill-site.git ../sill-site     # once
 rsync -a --delete --exclude .git --exclude .github --exclude .nojekyll site/ ../sill-site/   # when the site changes
 perl -0pi -e 's/[ \t]*<!-- Clipboard:.*?<!-- \/Clipboard -->\n//gs' ../sill-site/*.html   # only before the clipboard's release
+perl -0pi -e 's/<!-- Fit windows, was: (.*?) -->.*?<!-- \/Fit windows -->/$1/gs; s/[ \t]*<!-- Fit windows:.*?<!-- \/Fit windows -->\n?//gs' ../sill-site/*.html   # only before the fit by default's release
 git -C ../sill-site add -A && git -C ../sill-site commit -m "Update the site" && git -C ../sill-site push
 ```
 

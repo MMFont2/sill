@@ -126,6 +126,7 @@ swift run -c release SillHost Safari                 # optional: preselect a mat
 swift run -c release SillHost --virtual-display      # each streamed window on its own HiDPI display; Ctrl-C restores it
 swift run -c release SillHost --direct-wireless      # also over peer-to-peer Wi-Fi, for a device with no shared network
 swift run -c release SillHost --no-clipboard         # share nothing of the clipboard with devices (on by default, as in Sill.app)
+swift run -c release SillHost --no-fit               # a picked window keeps its size until the device's Aa sets one (fitted by default, as in Sill.app)
 swift run -c release SillHost --synthetic            # the Desktop streams a test pattern; no Screen Recording needed
 SILL_TEST_PATTERN=picture:/path/to.jpg swift run -c release SillHost --synthetic   # the Desktop a still picture instead (TEST ONLY)
 swift run -c release SillHost --remote               # the remote door for this run, on any free port (--remote=PORT)
@@ -154,7 +155,10 @@ device's panel says so. Its Virtual Display switch works only when `SillHost`
 runs with `--virtual-display`. `--direct-wireless` starts it with Direct
 Wireless Connection on (see Direct Wireless Connection below); it is off by
 default here too. The clipboard is shared as in Sill.app (The clipboard,
-below); `--no-clipboard` turns it off for the run.
+below); `--no-clipboard` turns it off for the run. A window a device picks is
+fitted to the device as in Sill.app (Windows sized for a device, below);
+`--no-fit` leaves it at its size until the device's Aa sets one, and says so in
+one line at launch.
 
 `--virtual-display` (off by default, 2026-09-22) moves the picked window onto a
 virtual HiDPI display created with a private CoreGraphics API and captures that
@@ -349,11 +353,33 @@ and open Sill again.
 
 ## Windows sized for a device
 
-Without the virtual display, Aa (text size) on the device resizes the window
-it streams on the Mac itself, through Accessibility, to the device's panel at
-that scale (nothing happens until Aa is first touched; a window in full screen
-is not resized: "Window sizing: ‹app› — ‹title› is full screen; not
-resizing."). The window goes back to its own frame when it stops streaming:
+Without the virtual display, Sill resizes the window it streams on the Mac
+itself, through Accessibility, to the device's panel at a text scale: Aa on
+the device, and with Aa unset 1×, Aa's own (issue #70, docs/fit-by-default-plan.md):
+the window takes the panel's size in Mac points, larger or smaller than it
+was, within what its app allows, and its text keeps the size it has on the
+Mac. That is Fit windows to the device's screen, in Sill.app's Settings ›
+Streaming and its menu (after Virtual Display), on by default and saved as
+`fitWindows`; turned off (or `SillHost --no-fit`), a window keeps its size
+until the device's Aa sets one, as before. A change applies at once: turned on,
+the window that streams is fitted; turned off, a window the setting fitted goes
+back. A scale Aa set counts whatever the setting, and the virtual display sizes
+its window either way. The fit comes at a pick, at every restart of the same
+window and at every new viewport (a rotation); a resize on the Mac while it
+streams is undone at the catalog's next look, as Aa's always was. The log says
+which: "Resized Safari to 1000×710 pt (asked 1000×710 for a 1000×710 panel at
+1×, by default)", or "… at 1.5×)" for Aa's. A window in full screen is not
+resized ("Window sizing: ‹app› — ‹title› is full screen; not resizing."), one
+that cannot be resized says so once ("Window sizing: ‹app› — ‹title› refused
+the size (AX error -25200); it streams at its own size."), and a fit that left
+a window short of the size asked (an app at its minimum, a busy app) is not
+asked again until something changes or the window is picked again
+(`FitPolicy.Asks`). `Sources/SillHost/FitPolicy.swift` is the rule, checked in
+`Tests/checks/fit-policy`. Kind 16 tells the device whether the Mac fits the
+streamed window (`stream.fitsPanel`), so the iPhone Duo open flat keeps its
+16:10 pane while it does.
+
+The window goes back to its own frame when it stops streaming:
 another window or the Desktop picked, the last device disconnecting (with
 several connected, the first to leave changes nothing), the stream stopping
 (the window closed, a stream that failed to start), and Sill quitting (Quit,
@@ -384,6 +410,11 @@ sequences that fit a window and put it back (over `WindowRestore.Access`, which
 `Tests/checks/window-restore` against a stand-in Mac;
 docs/restore-window-frames-plan.md has the reasons, and The restore probe
 (below) checks it against a real window.
+
+On a 1× display (an external display at 1×), a window streamed at Retina has
+fewer pixels than the host asks for; ScreenCaptureKit now scales it up to fill
+the frame (`scalesToFit`, closed PR #149), where before it sat in the frame's
+top-left corner. `Tests/capture-fit` (below) shows it.
 
 ## Trackpad gestures
 
@@ -877,18 +908,37 @@ file's header says how to build and run it.
 `Scripts/restore-probe/run.sh` checks that a window Sill sized goes back, with
 the real `WindowSizer.resize` and the restore the host runs, against a window
 of its own (`owner.swift`, in a bundle that never comes to the front, at the
-lower left behind every other window): fourteen steps (a stop, a rotation's
+lower left behind every other window): nineteen steps (a stop, a rotation's
 re-fit, moved, moved then re-fitted, resized, an app's minimum, a window that
 closes, the nudge at a display's edge, a window that cannot be resized, an app
 that does not answer, the virtual display's way home worked out without a
 display, two windows, an app stopped with `SIGSTOP` during a fit so its size
-goes unanswered and lands once it runs again, and the left edge dragged in
-before a re-fit), each frame before, during and after, in about 35 s. It
+goes unanswered and lands once it runs again, the left edge dragged in before
+a re-fit, and, through `FitPolicy` as the host now fits, a pick with Aa unset
+fitted up to a 1000×710 panel and down to an iPhone's 386×241 pane, each back
+whole, the setting off, the setting turned off while the window streams, and a
+window that cannot be resized asked once), each frame before, during and
+after, in about 45 s. It
 touches no other window, posts no input and makes no virtual display, and the
 front app must not change. It needs Accessibility and Screen Recording for the
 terminal, and an unlocked screen: while the screen is locked the window server
 shows a new window transformed and Accessibility lists none, so it says so and
 exits 2.
+
+### The capture check
+
+`Tests/capture-fit/run.sh` (TEST ONLY; closed PR #149's test, extended) shows
+what ScreenCaptureKit's `scalesToFit` changes in the host's `WindowCapture`:
+on a 1× and then a 2× virtual display of its own (the host's VirtualDisplay
+wrapper, with Sill's virtual display's identity), each with one white window
+of its own, it captures the window and the display at the sizes the host asks
+and checks that white fills each frame; `--rev origin/main` runs a revision's
+`WindowCapture.swift` (before the fix, the two cases that ask for more pixels
+than the window has fail). `CAPTURE_FIT_FRAMES=DIR` saves a patterned window's
+frames, and `compare.py DIR-A DIR-B` compares two runs' pixel by pixel. It
+needs Screen Recording for the terminal and an unlocked screen, never encodes,
+and each display lasts a few seconds; `Tests/capture-fit/README.md` has what it
+showed.
 
 ### Test arguments for the bare app
 
@@ -1331,7 +1381,8 @@ record field by field.
 - `Tests/checks/`: the pure checks (above). `Tests/touchrig/`: the touch rig
   (above). `Tests/duorig/`: folds and turns the iPhone Duo simulator (TEST
   ONLY, above). `Tests/keyrig/`: a hardware keyboard and mouse for the
-  simulator (TEST ONLY, above). `.github/`: the CI, release and TestFlight workflows, and the
+  simulator (TEST ONLY, above). `Tests/capture-fit/`: what `scalesToFit`
+  changes in window capture, on virtual displays of its own (TEST ONLY, above). `.github/`: the CI, release and TestFlight workflows, and the
   Sponsor button.
 - `site/`: the website, plain HTML for GitHub Pages: home, download, privacy
   policy, terms of service and support, with the App Store badge

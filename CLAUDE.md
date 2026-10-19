@@ -4950,7 +4950,7 @@ good.
   `HostConfig` (the knobs: maxFPS, captureScale, bitrate per 60 fps, the
   away pair awayBitrate and awayCaptureScale, prioritizeSpeed, virtualDisplay,
   directWireless, remoteAccess, remotePort, internetAccess, requirePairing,
-  shareClipboard; `standard` is the CLI's values and the app's defaults;
+  shareClipboard, fitWindows; `standard` is the CLI's values and the app's defaults;
   `effective(away:)`), `HostClipboard` (the clipboard's host side: who
   subscribed, the look at the pasteboard's change count four times a second
   while one has and macOS allows every read, a device's text written
@@ -5010,6 +5010,12 @@ good.
   `KeyUpCheck`, whether an up took its modifiers out of the HID state table;
   `DroppedInput`, what of input with nowhere to land still goes; pure,
   `Tests/checks/key-strokes`),
+  `FitPolicy` (when a window streaming in regular mode is fitted to the device,
+  and to which size: Aa's scale whatever the setting, 1× with Aa unset while
+  `HostConfig.fitWindows` is on (issue #70), scales outside 0.25–4 and sides past
+  16,384 pt never; `Asks`, a fit that left its window short not asked again for
+  nothing; a change of the setting while a window streams; kind 16's
+  `stream.fitsPanel`; the lines; pure, `Tests/checks/fit-policy`),
   `WindowSizer` (Accessibility resize for the Aa scale, returning what it did,
   `Fit`; `placement/move/restore` for the virtual display; `AXWindows`,
   WindowRestore's reads and writes through Accessibility), `WindowRestore` (a
@@ -5346,7 +5352,9 @@ good.
   `Tests/checks/phone-portrait`), `DuoPosture`
   (the iPhone Duo's posture and the rules that follow from it, docs/iphone-duo-plan.md:
   `FoldInfo`, inferred before iOS 27.1 or the fold's band; the laptop pose's
-  split at the real fold and open flat's at the picture's shape, the book
+  split at the real fold and open flat's at the picture's shape (16:10 while the
+  Mac fits the window: `fitsWindowToPane`, Aa set, the virtual display, or kind
+  16's `stream.fitsPanel`), the book
   pose's bar, one page for a card (on its targets' page), the connect column
   and the room above the laptop pose's fold, the pairing overlay and the
   window lights; the stream screen's status bar (hidden on the inner display
@@ -5532,7 +5540,8 @@ good.
   writer, against Finder's own layout of the file, make-dmg.sh's layout
   arguments and the SVG's size and edge), `door-policy`, `duo` (DuoPosture;
   `tour` and `phone-portrait` take the Duo's real sizes too), `encoder-mailbox`,
-  `encoder-slowstate`, `fence`, `gesture-chords`, `gestures`, `goodbye`,
+  `encoder-slowstate`, `fence`, `fit-policy` (FitPolicy, with a model of the
+  coordinator's fit against a stand-in app), `gesture-chords`, `gestures`, `goodbye`,
   `hardware-keyboard` (iOSClient's HardwareKeyboardPolicy),
   `home-device`, `home-model`, `home-records`, `home-txt`, `key-strokes` (the
   host's KeyStrokes and the device's KeyChords, against a model of the Mac's
@@ -5544,7 +5553,7 @@ good.
   `remote-rules` (with its `home.swift`), `settings-window` (Sill.app's
   `SettingsWindowFit`), `tour`, `update-policy`,
   `window-restore` (WindowRestore's rule and sequences against a stand-in Mac,
-  with a copy of the coordinator's glue around them) (the two encoder checks refuse a binary that links
+  with a copy of the coordinator's glue around them, fits through FitPolicy) (the two encoder checks refuse a binary that links
   VideoToolbox). `run-all.sh
   [--mutants] [-v] [name…]` runs them and exits
   with the number that failed (a folder whose `run.sh` is not executable
@@ -5575,6 +5584,16 @@ good.
   pans); `run.sh build`, `run.sh UDID keys SPEC`, `run.sh UDID point SCRIPT`;
   only a booted simulator of your own, by UDID (its README has what it showed:
   after its keys UIKit there counts a hardware keyboard for good).
+- `Tests/capture-fit/` — TEST ONLY, the private CGVirtualDisplay API: what
+  ScreenCaptureKit's `scalesToFit` changes in the host's `WindowCapture` (closed
+  PR #149's test, extended): the real WindowCapture.swift on a 1× and a 2×
+  virtual display of its own (VirtualDisplay.swift, Sill's virtual display's
+  identity), one white window of its own on each, the window and the display
+  captured at the sizes the host asks, white filling each frame; `run.sh
+  [--rev REV]` (a revision's WindowCapture.swift: origin/main before the fix fails
+  the two upscales), `CAPTURE_FIT_FRAMES=DIR` saves a patterned window's frames
+  and `compare.py DIR-A DIR-B` compares two runs'. Needs Screen Recording and an
+  unlocked screen; never encodes (its README has what it showed).
 
 ## Build and run
 
@@ -5602,6 +5621,7 @@ python3 Scripts/sillclient.py PORT 3 desktop --input='{"key":{"hidUsage":44,"dow
 python3 Scripts/sillclient.py PORT 8 none --gesture=swipeUp@3 --gesture=swipeDown@4   # a synthetic host logs "Gesture from …: swipe up → Mission Control (shortcut 108: key 160, fn) (not posted: a test host)"
 SILL_TEST_LOOPBACK=1 SILL_TEST_HOTKEYS='108=off,173=off' .build/release/SillHost --synthetic   # TEST ONLY: the gestures read this table (over macOS 27's own; `defaults` alone) instead of this Mac's shortcuts
 swift run -c release SillHost --no-clipboard  # share nothing of the clipboard with devices (on by default, as in Sill.app)
+swift run -c release SillHost --no-fit      # a picked window keeps its size until the device's Aa sets one (fitted at 1× by default, as in Sill.app)
 SILL_TEST_LOOPBACK=1 SILL_TEST_SOFTWARE_ENCODER=1 SILL_TEST_NO_ROUTER=1 SILL_TEST_PASTEBOARD=me.saffer.sill.test.x SILL_TEST_CLIPBOARD_LOG=1 .build/release/SillHost --synthetic   # the clipboard on a pasteboard of its own (never this Mac's), each decision printed with sizes
 python3 Scripts/sillclient.py PORT 6 none --clipboard --copy=hello@2 --expect=clipboard=none   # subscribe, send text as a device's Paste does; each kind 32 printed
 SILL_TOUCHRIG_SIM='Sill touchrig' Tests/touchrig/run.sh new && Tests/touchrig/run.sh --rev origin/main base && Tests/touchrig/compare.py .build/touchrig/base.log .build/touchrig/new.log   # the surfaces under synthesized touches
@@ -5619,6 +5639,7 @@ python3 -m http.server 8000 --directory site   # the website at http://localhost
 Scripts/encoder-check/run.sh            # the encoder checks that never touch an encoder (safe while Sill.app streams)
 Scripts/menu-check/run.sh               # the menus' reader and mirror against Scripts/menufixture.swift, no host, no encoder (needs Accessibility)
 Scripts/restore-probe/run.sh            # TEST ONLY: a window Sill sized goes back, against a window of its own (needs Accessibility, Screen Recording, an unlocked screen)
+Tests/capture-fit/run.sh [--rev origin/main]   # TEST ONLY: what scalesToFit changes in window capture, on a 1× and a 2× virtual display of its own (needs Screen Recording, an unlocked screen)
 Tests/duorig/run.sh UDID pose book && Tests/duorig/run.sh UDID shot book book.png   # TEST ONLY: fold and photograph an iPhone Duo simulator (laptop, flat-portrait, flat-landscape, closed-upright, closed-side)
 Tests/keyrig/run.sh UDID keys 29,04,e3:down,1a,e3:up && Tests/keyrig/run.sh UDID point 'move 300,200|wheel -3'   # TEST ONLY: Esc, a and ⌘W from a hardware keyboard, then a wheel's notch, inside a simulator of your own
 SILL_TEST_ENCODER_RECYCLE=0 swift run -c release SillHost   # =0 keeps every hardware session, =1 replaces one in the slow state, as by default (A/B on the real Desktop: --synthetic moves every frame and never reaches the slow state)
@@ -5631,7 +5652,7 @@ whatever launched it), Sill.app's to Sill itself.
 Sill.app: the log is `~/Library/Logs/Sill/Sill.log` (`tail -F`, not `-f`: at
 10 MB it moves to Sill.1.log; Show Log… in the menu); settings are `defaults
 read me.saffer.sill.mac` (maxFPS, captureScale, bitrate, prioritizeSpeed,
-virtualDisplay, directWireless, shareClipboard, updateCheck; the update check keeps
+virtualDisplay, directWireless, shareClipboard, fitWindows, updateCheck; the update check keeps
 updateLastCheck, updateETag, updateLatestTag and updateLatestURL), and a launch
 argument such as `-maxFPS 60` or `-updateCheck 0` overrides one for one run. A device's change from its Settings panel is saved there too, like a
 menu click; the CLI keeps a device's change until SillHost quits. Test arguments for the bare binary (`.build/release/SillMenuBar`,
@@ -6013,7 +6034,12 @@ device keeps working with Macs from the first public build on, or each says why
   set (the away quality for a device away), and its optional `away` (AwayQuality, from a host with
   an identity: Sill.app, SillHost --remote or --pairing) and `link` (LinkReport, only while a link
   does not keep up; its `state` a string,
-  which a device reads as keeping up when it does not know it); kind 22's `reason`, `message` and
+  which a device reads as keeping up when it does not know it), and its `stream`'s optional
+  `fitsPanel` (issue #70: the Mac sizes the streamed window to the device's panel, by Aa, by its Fit
+  windows to the device's screen with Aa unset, or on the virtual display; nil from a host before it,
+  which a device reads as before: fitted only with Aa set or on the virtual display); a Viewport
+  whose `scale` is nil fitted at 1× by a host whose Fit windows to the device's screen is on, and left
+  alone by one with it off or from before it; kind 22's `reason`, `message` and
   `reconnect`; the
   Mac's menus as MacMenu.swift has them (docs/menu-bar-plan.md §3):
   a kind 27 without an id is the device's subscription, and only a subscriber is served (another

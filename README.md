@@ -72,9 +72,8 @@ Sill has layouts of its own.
 - **On iPhone**, held upright, the picture is on top with buttons, keys and a
   trackpad below. Larger Picture, in the settings panel, gives a window's
   picture the room of the window thumbnails, down to where the keyboard comes
-  up; the Desktop keeps the usual layout. A window keeps its own shape until
-  you set its text size with Aa, or turn on the virtual display; then your Mac
-  makes it fill the taller picture.
+  up; the Desktop keeps the usual layout. Your Mac makes a window fill the
+  taller picture, as it fits every window you pick (Window size, below).
 - **The clipboard** goes both ways while Share Clipboard is on, in both apps:
   text you copy on your Mac is ready to paste on your device, and Paste in
   Sill sends what you copied on your device to your Mac's clipboard, where you
@@ -110,12 +109,14 @@ Sill has layouts of its own.
 - **When the link can't keep up**, Sill for Mac notices that it is holding
   frames back and tells your device, which says so over the picture and, in
   its Settings, offers a quality the link can carry.
-- **Text size**: Aa on your device resizes the window you stream on your Mac,
-  through Accessibility, so its text shows at the size you pick, and keeps it
-  at that size while it streams. The window goes back to its own size and
-  place when Sill stops showing it: you pick another window or the Desktop,
-  your last device disconnects, or you quit Sill. If you moved it on your Mac
-  meanwhile, it keeps its new place.
+- **Window size**: a window you pick takes the size of your device's screen
+  on your Mac, through Accessibility, with its text at the size it has on your
+  Mac, and keeps that size while it streams; Aa on your device makes the text
+  larger or smaller. The window goes back to its own size and place when Sill
+  stops showing it: you pick another window or the Desktop, your last device
+  disconnects, or you quit Sill. If you moved it on your Mac meanwhile, it
+  keeps its new place. To leave windows at their own size until you use Aa,
+  turn off Fit windows to the device's screen in Sill's Settings › Streaming.
 - **The virtual display** (off by default) moves a window you stream onto a
   display of its own on your Mac, so it keeps updating when other windows
   cover it. It uses a private macOS API, which is one reason Sill for Mac comes
