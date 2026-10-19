@@ -826,25 +826,47 @@ not a window list came:
 | internetOff | "‹Mac› stopped accepting connections from the internet. Connect through your VPN." | yes | no | — |
 | busy | "‹Mac› is already serving 8 devices." | yes | a saved Mac | — |
 | update | `message`. Without one: "Update Sill on this ‹iPad› to keep using ‹Mac›.", plus " It needs version ‹minimumVersion› or later." when that parses | only with `"reconnect":true` | a saved Mac | the App Store |
-| sleep (issue #105, PR #100) | "‹Mac› went to sleep. This ‹iPad› reconnects when it wakes." | yes, the Mac counted as asleep: a row listed at the goodbye is first dialled 20 s later, then every 30 s, nine dials (#69's twelve, three of them counted), with #69's lines from that first dial on; a row listed afresh at once | a saved Mac, only after a session through the remote door, not before 20 s | — |
-| shutdown, restart (issue #105, PR #100) | "‹Mac› is shutting down. This ‹iPad› reconnects when it’s back." / "‹Mac› is restarting. This ‹iPad› reconnects when it’s back." | yes, but never a row listed at the goodbye: only one listed afresh (the Mac back, Sill open again), at once | a saved Mac, only after a session through the remote door, not before 20 s | — |
+| sleep (issue #105, PR #100) | "‹Mac› went to sleep. This ‹iPad› reconnects when it wakes." | yes, the Mac counted as asleep: a row listed at the goodbye is first dialled 20 s later, then every 30 s, nine dials (#69's twelve, three of them counted), with #69's lines from that first dial on; a row listed afresh at once, and so a row the browser made at the return from the background lists when the goodbye was read only on that return | a saved Mac, only after a session through the remote door, not before 20 s | — |
+| shutdown, restart (issue #105, PR #100) | "‹Mac› is shutting down or restarting. This ‹iPad› reconnects when it’s back." / "‹Mac› is restarting. This ‹iPad› reconnects when it’s back." | yes; a row listed at the goodbye is left alone until it is listed afresh (the Mac back, Sill open again), the browser made at a return from the background lists it, or 10 minutes have passed, then dialled at once; the words stay until that dial | a saved Mac, only after a session through the remote door, not before 20 s | — |
 | Any other reason, and a kind 22 that does not decode (reason "") | `message`. Without one: "‹Mac› closed the connection. Tap it to try again.", or with `"reconnect":true` "‹Mac› closed the connection. Sill will reconnect when it can." | only with `"reconnect":true` | a saved Mac | — |
 
 - The first six rows are today's words and behaviour, moved, not changed.
 - sleep, shutdown and restart (added with PR #100, issue #105): the Mac's own going. Sill.app (and
   the CLI under the AppKit loop, `--virtual-display`) sends "sleep" from NSWorkspace's willSleep,
-  then closes each connection, so the device's session ends at once, not when its liveness gives up
-  on a Mac gone silent; its Quit sends "restart" or "shutdown" when macOS gives that reason in the
-  quit Apple event (`kAEQuitReason`), else "quit", a log out included (HostGoodbye). Each carries the
-  Mac's words, in plain words ("Noah’s MacBook Pro is going to sleep.", "… is shutting down.", "… is
-  restarting.") and `"reconnect":true`, so a device from before them, which reads them as reasons it
-  does not know, shows those words and reconnects as after any end (0.5.1 shows them until its
-  reconnect's first dial, which comes at once while the Mac's row is still listed). This build
-  words them itself (above) and treats them as notices, so a remote dial's goodbye before its first
-  window list never reads as "isn’t accepting remote connections". One goodbye per connection, the
-  first: a Quit right after the sleep's goodbye, or after Remove, sends nothing more on that
-  connection. The device keeps a goodbye only for the connection it came on (a move that carries the
-  session over to another connection drops it; a new session starts without one).
+  then closes each connection (its goodbye, this side's end, then what the device still sends read
+  and dropped until it closes, as the gate's refusals close), so the device's session ends at once,
+  not when its liveness gives up on a Mac gone silent. A log out, a restart or a shut down is less
+  certain (HostGoodbye has the evidence). Observed: a restart begun from another account ended
+  Sill.app with SIGTERM during the system shutdown, its goodbye "quit"; loginwindow handles a
+  UI-element app such as Sill.app after the point of no return, with a kill attempt and a quit Apple
+  event to one it could not kill; and, in a probe, AppKit posts NSWorkspace's willPowerOff as it
+  handles a quit Apple event whose `kAEQuitReason` is an attribute, just before the Quit (with the
+  reason as a parameter, or none, it posts nothing). Inferred, not observed: that a log out, restart
+  or shut down begun in Sill's own session sends Sill.app such a quit event (it turns sudden
+  termination off). Its reason (read as a parameter or an attribute) says "restart" or "shutdown", a
+  log out "quit"; after willPowerOff without a reason read, and for a SIGTERM within ten minutes of
+  willPowerOff, the goodbye is "shutdown" in the words "… is shutting down or restarting."
+  (willPowerOff says neither which nor whether someone cancels it, so nothing goes out before Sill
+  does, and a Quit from Sill's own menu stays "quit"). Without either, "quit", as before. Each carries the Mac's words, in plain words ("Noah’s MacBook Pro is going to
+  sleep.", "… is shutting down or restarting.", "… is shutting down.", "… is restarting.") and
+  `"reconnect":true`, so a device from before them, which reads them as reasons it does not know,
+  shows those words and reconnects as after any end (0.5.1 shows them until its reconnect's first
+  dial, which comes at once while the Mac's row is still listed). This build words them itself
+  (above; "shutdown" as "shutting down or restarting", since a Mac sends it for willPowerOff) and
+  treats them as notices, so a remote dial's goodbye before its first window list never reads as
+  "isn’t accepting remote connections". The holds are bounded (the review of 2026-10-20): a device
+  that missed the old registration's removal (suspended within the second it outlives the goodbye,
+  the goodbye read only on the return from the background, an mDNS goodbye lost) keeps the row's
+  old sighting, so after "shutdown" or "restart" the return from the background releases the hold
+  (what the browser made then lists) and 10 minutes end it; and a goodbye read only as the app came
+  back (in the background just before the return, or within 3 s after it on a session up before that
+  return) counts the rows the browser made at that return lists as listed afresh, after "sleep" too,
+  since the Mac may have said it long before (DiscoveryPolicy's `returnRenews`); one on a session
+  dialled after the return is the Mac's now. One goodbye per connection, the first: a
+  Quit right after the sleep's goodbye, or after Remove, sends nothing more on that connection, and
+  nothing else follows a goodbye on it. The device keeps a goodbye only for the connection it came
+  on (a move that carries the session over to another connection drops it; a new session starts
+  without one).
 - `message` is shown after `SafeText.label(message, limit: 300)`: one line, without control or
   bidirectional characters. Empty after cleaning counts as absent. The status line is
   `Text(client.status)`, which SwiftUI shows verbatim for a String: no Markdown, and no link from

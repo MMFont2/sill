@@ -100,17 +100,37 @@ Settings: `defaults read me.saffer.sill.mac`.
 When the Mac is about to sleep, Sill tells every connected device so before it
 does (a goodbye, kind 22, "sleep", with the Mac's words, "Noah’s MacBook Pro is
 going to sleep.") and closes its connection, so the device says why at once;
-the log says "The Mac is going to sleep: 1 device told.". When macOS quits Sill
-for a restart or a shut down, its quit says which, and the devices hear that
-("restart", "shutdown"; the log first "Quit: macOS asked Sill to quit for a
-restart."); a log out, Quit from the menu or a signal is "quit" as before. One
-goodbye per connection, the first: a Quit right after the sleep's tells a
-device nothing more. Words for a device from before these reasons are the
-Mac's own, which it shows as they are (issue #105; docs/update-notice-plan.md
-§7.3; `Sources/SillHost/HostGoodbye.swift`, checked in `Tests/checks/goodbye`).
-The command-line host does the same for sleep only with `--virtual-display`
-(it runs the AppKit loop then, where NSWorkspace says the Mac is about to
-sleep); without it, a device finds out by its liveness, as before.
+the log says "The Mac is going to sleep: 1 device told.". Every sleep ends
+every session, so what Sill does when the last device leaves runs as the Mac
+sleeps: capture stops, a window Sill sized goes back, the virtual display goes
+and its window home.
+
+A log out, a restart or a shut down is less certain (issue #105;
+`Sources/SillHost/HostGoodbye.swift` has the evidence). What was seen: a
+restart begun from another account while Sill ran in this one ended Sill with
+SIGTERM (launchd: "exited due to exit(143) during system shutdown"), so its
+goodbye was "quit"; loginwindow handles a menu bar app such as Sill after the
+point of no return, with a kill attempt and a quit Apple event to one it could
+not kill; and, in a probe on this Mac, AppKit posts NSWorkspace's willPowerOff
+as it handles a quit Apple event whose reason is an attribute, just before the
+Quit. What is inferred, and not yet seen: that a log out, restart or shut down
+begun in Sill's own session sends Sill such a quit event (Sill turns sudden
+termination off, so it cannot just be killed). Then the log says "macOS says
+the Mac is about to log out, restart or shut down." and "Quit: macOS asked Sill
+to quit for a restart.", and every device hears "restart" ("Noah’s MacBook Pro
+is restarting.") or "shutdown" ("… is shutting down."); a log out is "quit".
+Within ten minutes of willPowerOff, a quit event with no reason Sill can read,
+and a SIGTERM, send "shutdown" in the words "… is shutting down or
+restarting." (willPowerOff says neither which nor whether someone cancels it,
+so nothing is sent until Sill goes, and a Quit from Sill's own menu stays
+"quit"). Without either (Quit from the menu, a signal, a restart begun
+from another account as above), "quit" as before. One goodbye per connection,
+the first: a Quit right after the sleep's tells a device nothing more. Words for
+a device from before these reasons are the Mac's own, which it shows as they
+are (docs/update-notice-plan.md §7.3; checked in `Tests/checks/goodbye`). The
+command-line host does the same for sleep only with `--virtual-display` (it
+runs the AppKit loop then, where NSWorkspace says the Mac is about to sleep);
+without it, a device finds out by its liveness, as before.
 
 Updates: once a day (and when you click Check Now in Settings › General),
 Sill asks GitHub (api.github.com) whether a newer Sill has been released, and
@@ -232,10 +252,16 @@ again. When the Mac said why it went (Sill.app above), the device says so too:
 Mac as asleep from the start, so a row listed then (a sleep proxy's) is first
 dialled 20 s later, then every 30 s, with the lines above from that dial on,
 and a row listed afresh (the Mac awake) at once; "Mac mini is restarting." (or
-"is shutting down.") "This iPad reconnects when it’s back.", and nothing is
-dialled until the Mac is listed afresh. Neither dials the Mac's addresses
-remotely unless the session came that way, and then not before 20 s. Back
-from the background the device also makes its Bonjour browser again (and the
+"is shutting down or restarting.") "This iPad reconnects when it’s back.", and
+a row listed then (the registration on its way out) is left alone until the
+Mac is listed afresh, Sill comes back from the background, or 10 minutes have
+passed; the words stay until the first dial. A goodbye can wait in the
+connection while Sill is suspended and be read only as it comes back, when the
+Mac may have said it long before: then what the browser made again at that
+return lists is the Mac as it is now, dialled at once (not for a goodbye on a
+session dialled after the return, which is the Mac's now). Neither dials the Mac's
+addresses remotely unless the session came that way, and then not before 20 s.
+Back from the background the device also makes its Bonjour browser again (and the
 nearby one, if it runs), since iOS cuts a suspended app's connection
 to mDNSResponder and a browser made before then lists what it saw then; the
 rows it had stay up for the new browser's first 3 s, so a Mac that stays listed
@@ -923,9 +949,15 @@ settings in the defaults domain `SillMenuBar` (delete it after), and takes:
 - `-SillLogFile <path>`, `-SillSetAfter '<s> key=value[,key=value][; <s> …]'`
   and `-SillQuitAfter <s>`. `-SillQuitAfter '<s> restart'` (or `shutdown`,
   `logout`) quits with that reason instead: a quit Apple event to the app itself
-  carrying it, as macOS sends every app at a restart, a shut down or a log out,
+  carrying it as the event's attribute (with `parameter` after the reason, as
+  its parameter), as macOS sends an app at a restart, a shut down or a log out,
   read where Sill.app reads it. `-SillSleepAfter <s>`: as if the Mac were about
   to sleep (the goodbye every device hears then, and the closed connections).
+  `-SillPowerOffAfter <s>`: as if macOS said the Mac is about to log out,
+  restart or shut down (NSWorkspace's willPowerOff, posted to the app's own
+  workspace notification center: nothing outside the process hears it), so a
+  SIGTERM (`kill -TERM ‹pid›`) or a Quit without a reason after it sends the
+  goodbye that would follow.
   With `SILL_TEST_SERVICE_TYPE=_silltest._tcp` and `-requirePairing NO` a
   simulator's Sill taps the test host's row (`-SillServiceType _silltest._tcp
   -SillTapRow "Sill test ‹pid›"`) and shows what follows; a goodbye staged at
