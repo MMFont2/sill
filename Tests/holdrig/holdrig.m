@@ -11,7 +11,9 @@
 //   RIG_SCRIPT  scenarios, separated by ';': hold S (press the first thumbnail S seconds, then lift),
 //               tap (the second thumbnail, 80 ms), swipe (the third thumbnail, 120 pt left over 0.25 s),
 //               drift (the first, creeping 7.5 pt over 2.5 s), drag (the first: past the hold, then
-//               150 pt right over 0.6 s), wait S. Default "hold 3; tap; swipe; drift; drag".
+//               150 pt right over 0.6 s), set S (Sill.thumbnailHold written as the Settings panel's
+//               stepper writes it, with the strip on screen), wait S. Default "hold 3; tap; swipe; drift;
+//               drag".
 //   RIG_DELAY   seconds after launch before the first scenario (default 4: the harness's mock first).
 //   RIG_ROUTE   enqueue: the touches go in through UIKit's own HID entry point (`_enqueueHIDEvent:`), so
 //               UIKit makes them, hit-tests and routes them as a finger's; RIG_NORMALIZED=1 gives their
@@ -225,6 +227,13 @@ static void start(void) {
             NSArray<UIView *> *thumbs = thumbnails(w);
             if (thumbs.count) hold = holdOf(thumbs.firstObject).minimumPressDuration;
             addPress(steps, @"drag", 0, hold + 0.4 + 0.6 + 0.3, 150, 0, 0.6, hold + 0.4, 20);
+        } else if ([verb isEqualToString:@"set"]) {
+            // The setting changed while the strip is on screen, as the Settings panel's stepper writes it.
+            [steps addObject:^double{
+                [NSUserDefaults.standardUserDefaults setDouble:arg forKey:@"Sill.thumbnailHold"];
+                say(@"=== set Sill.thumbnailHold to %.1f s", arg);
+                return 1.0;
+            }];
         } else if ([verb isEqualToString:@"wait"]) [steps addObject:^double{ return arg; }];
         else if (verb.length) say(@"unknown step %@", raw);
     }

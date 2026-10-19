@@ -5327,7 +5327,13 @@ good.
   (landscape: top bar, thumbnails, drawer, Aa, Keyboard, Desktop; layout
   selection by size incl. Duo outer display, and `DuoLayout.phoneArrangement`,
   the idiom: which arrangement `.outerPortrait` draws; `DuoLayout.isPortrait`,
-  the laptop layouts, where the trackpad's pointer shows), `PortraitStreamScreen`
+  the laptop layouts, where the trackpad's pointer shows; `WindowStrip`, every
+  bar's thumbnails, with `HoldDragOverlay` and `ThumbnailPressRecognizer`, a
+  thumbnail's tap, hold and drag and its press from touch-down, and DEBUG
+  `HoldConsole`), `ThumbnailHold` (how long a thumbnail is held for its lights:
+  1 to 5 s in half seconds, 1 s unless changed, `Sill.thumbnailHold`; what a
+  stored value means, the press's look, the words; pure, `Tests/checks/
+  thumbnail-hold`; pbxproj A113/F113; issue #113), `PortraitStreamScreen`
   (portrait in two arrangements: the halves, the picture over the window bar,
   the key row and the trackpad, at the inner display's size and, for an iPad
   window narrower than 600 pt, the compact one with the key row in two lines;
@@ -5542,7 +5548,8 @@ good.
   `pairing-address`, `phone-portrait`, `pointer-control`, `pointer-presence`,
   `pointer-watch`, `policy` (with its `home.swift`), `protocol`,
   `remote-rules` (with its `home.swift`), `settings-window` (Sill.app's
-  `SettingsWindowFit`), `tour`, `update-policy`,
+  `SettingsWindowFit`), `thumbnail-hold` (iOSClient's ThumbnailHold, a child
+  run of itself reading `-Sill.thumbnailHold`), `tour`, `update-policy`,
   `window-restore` (WindowRestore's rule and sequences against a stand-in Mac,
   with a copy of the coordinator's glue around them) (the two encoder checks refuse a binary that links
   VideoToolbox). `run-all.sh
@@ -5575,6 +5582,14 @@ good.
   pans); `run.sh build`, `run.sh UDID keys SPEC`, `run.sh UDID point SCRIPT`;
   only a booted simulator of your own, by UDID (its README has what it showed:
   after its keys UIKit there counts a hardware keyboard for good).
+- `Tests/holdrig/` — TEST ONLY, private interfaces, simulator only: a driver
+  library injected into the real Debug app (`DYLD_INSERT_LIBRARIES` through
+  `simctl launch`; the app is not changed) that presses the window thumbnails
+  with the touch rig's `TouchSynth` (a hold, a tap, a swipe across the strip, a
+  creep, a hold then a drag) and stamps, from each touch-down, the thumbnail's
+  long press and tap and the strip's scroll beside the app's own `hold:` and
+  `lights:` lines; `run.sh UDID APP NAME [SCRIPT] [-- launch arguments]`, only
+  a booted simulator of your own (its README has what it measured; issue #113).
 
 ## Build and run
 
@@ -5621,6 +5636,7 @@ Scripts/menu-check/run.sh               # the menus' reader and mirror against S
 Scripts/restore-probe/run.sh            # TEST ONLY: a window Sill sized goes back, against a window of its own (needs Accessibility, Screen Recording, an unlocked screen)
 Tests/duorig/run.sh UDID pose book && Tests/duorig/run.sh UDID shot book book.png   # TEST ONLY: fold and photograph an iPhone Duo simulator (laptop, flat-portrait, flat-landscape, closed-upright, closed-side)
 Tests/keyrig/run.sh UDID keys 29,04,e3:down,1a,e3:up && Tests/keyrig/run.sh UDID point 'move 300,200|wheel -3'   # TEST ONLY: Esc, a and ⌘W from a hardware keyboard, then a wheel's notch, inside a simulator of your own
+Tests/holdrig/run.sh UDID .build/dd/Build/Products/Debug-iphonesimulator/Sill.app run1 'hold 3; tap; swipe' -- -SillLayout 1000x710 -Sill.thumbnailHold 2.5   # TEST ONLY: press the thumbnails in the real Debug app, each stamped from touch-down (.build/holdrig/run1.log)
 SILL_TEST_ENCODER_RECYCLE=0 swift run -c release SillHost   # =0 keeps every hardware session, =1 replaces one in the slow state, as by default (A/B on the real Desktop: --synthetic moves every frame and never reaches the slow state)
 Scripts/encoder-check/verify-hardware.sh harness   # USES THE HARDWARE ENCODER; skips each run while a device is connected
 ```
@@ -5840,7 +5856,9 @@ remoteslow|remotepair|remoteoff|noremote`, `-SillSettingsEnd 1` (the panel
 scrolled to its end), `-SillSettingsScroll gestures` (the panel scrolled to its
 This iPad group; the mock Mac takes gestures in every case but `legacy`),
 `-Sill.trackpadGestures 0` (the device's Three-Finger Gestures off for one run,
-in the normal app too), `-Sill.largerPicture 1` (its Larger Picture on for one run,
+in the normal app too), `-Sill.thumbnailHold <s>` (the window thumbnails' hold, 1 to 5 s,
+for one run; the console's `hold:` and `lights:` lines stamp each press from touch-down),
+`-SillThumbnailPress 1` (the first thumbnail drawn pressed), `-Sill.largerPicture 1` (its Larger Picture on for one run,
 in effect while a window streams, as the mock does but with `-SillActive desktop|none`;
 the console's `larger picture: …` line says what the rule made of it;
 `-SillVideoSize WxH` the mock's frame, `-SillLargerPictureToggle <s>[,<s>…]` the

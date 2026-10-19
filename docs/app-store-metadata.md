@@ -419,6 +419,8 @@ Larger Picture, in Settings on iPhone: held upright, a window’s picture takes 
 With a keyboard attached to your iPhone or iPad, what you type goes to your Mac as soon as its picture shows, Esc included, without the Keyboard button. Two fingers on a trackpad, or a mouse’s scroll wheel, now scroll the window under the pointer.
 
 Fixed: after Sill sat in the background for hours, it could stop finding your Mac until you closed and reopened it. Sill now looks again when you come back, keeps trying for a few minutes while your Mac doesn’t answer (when it’s asleep, say), and connects when it does.
+
+Touch and hold a window’s thumbnail and it darkens at once, and Close, Minimize and Full Screen now come after a second instead of a second and a half. Set how long you hold, from 1 to 5 seconds, in Sill’s settings under This iPad or This iPhone.
 ```
 
 Esc and scrolling with a trackpad or a mouse showed on the iPad through Universal Control on 2026-10-15
@@ -760,6 +762,10 @@ Safe:
 - With those words in (2026-10-15, after Noah's Universal Control test), the
   description block as it stands here, Larger Picture's sentence included:
   3,044 characters; its keyboard paragraph of the next What's New 247.
+- With the thumbnail hold (#113, docs/thumbnail-hold-plan.md), its paragraph of
+  the next What's New: 246 characters; the description's thumbnails bullet
+  ("Touch and hold one to close, minimize or go full screen. Drag it to
+  reorder.") still true as it is; the rest unchanged.
 - The encryption key, now in `iOSClient/Info.plist`: Release builds of this
   branch for the simulator and for a device each have
   `"ITSAppUsesNonExemptEncryption" => false` in the built Sill.app's

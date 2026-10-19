@@ -224,9 +224,25 @@ docs/reconnect-after-sleep-plan.md has the rules;
 The gear at the end of the bar opens Settings: the Mac's streaming settings,
 changed from the device, and Disconnect at the bottom. After the Mac's settings
 come the device's own: This iPad (or iPhone), with Larger Picture on an iPhone
-(below; off unless turned on) and Three-Finger Gestures (below, Trackpad
-gestures; on unless turned off), neither ever sent to the Mac, and last Take
-the Tour.
+(below; off unless turned on), Share Clipboard (below, The clipboard), Hold to
+Show Window Controls (below; 1 s unless changed) and Three-Finger Gestures
+(below, Trackpad gestures; on unless turned off), none of them sent to the Mac
+but the clipboard's subscription, and last Take the Tour.
+
+The window thumbnails sit in the bar (on a phone held upright, in the row under
+the buttons). A tap shows that window. Touch and hold one and, once the hold has
+passed, it wiggles and Close, Minimize and Full Screen appear beside it; keep
+holding and drag to move it to another place (the order is the device's own,
+for each Mac). The hold is 1 s unless changed in Settings › This iPad › Hold to
+Show Window Controls, from 1 to 5 s in half seconds (issue #113,
+docs/thumbnail-hold-plan.md; it was a fixed 1.5 s). From touch-down the
+thumbnail darkens and shrinks a little over the hold, so a press that took
+shows at once; under Reduce Motion it only darkens. A Debug build's console
+stamps each press: `hold: touch-down on a thumbnail (the hold is 1 s)`, `hold:
+held 1.017 s after touch-down`, `lights: shown 1.045 s after touch-down`, and,
+for a press that ended before the hold, why (`the finger lifted`, `the finger
+moved more than 12 pt`, `another gesture took the touch (the strip's scroll,
+say)`).
 
 On the iPhone Duo (docs/iphone-duo-plan.md) the layout follows the hinge,
 which iOS 27.1 reports with the fold's place. Open, Sill is on the inner
@@ -1034,6 +1050,10 @@ simulator:
   (what a `-SillConnect` address counts as), `-SillCableTest 1` (this
   device's path counts as the cable) and the connect screen's `home…` cases;
   `CLAUDE.md`, Build and run, has them all.
+- `-Sill.thumbnailHold 2.5` holds the window thumbnails' hold at 2.5 s for one
+  run (1 to 5 s, in the normal app too; the panel's stepper changes nothing
+  while it holds it), and `-SillThumbnailPress 1` draws the first thumbnail
+  pressed, as a finger on it does before the hold.
 - `-Sill.trackpadGestures 0` turns the device's Three-Finger Gestures off for
   one run, `-SillSettingsScroll gestures` opens the Settings panel at that
   group, and `-SillVoiceOver 1` shows it as with VoiceOver on. Under `-SillLive 1`, `-SillInputScript '3 gesture swipeUp'` sends a
@@ -1103,6 +1123,20 @@ With `SillHost --synthetic` and `SILL_TEST_INPUT_LOG=1` (and
 the host prints what each key would post. Only on a simulator of your own:
 after its keys, UIKit there counts a hardware keyboard for good. Its README
 has what it showed.
+
+### The hold rig
+
+`Tests/holdrig/run.sh UDID APP NAME ['hold 3; tap; swipe; drift; drag']`
+installs a Debug build of the app (APP) on a booted simulator of your own,
+launches it in the harness (`-SillLayout 1000x710` unless other launch
+arguments follow `--`) with a driver library injected (TEST ONLY:
+`DYLD_INSERT_LIBRARIES` through `simctl launch`, the touch rig's synthesized
+touches; the app itself is not changed), and presses the window thumbnails:
+a hold, a tap, a swipe across the strip, a finger creeping during the hold, a
+hold then a drag. `.build/holdrig/NAME.log` has, from each touch-down, the
+thumbnail's long press and tap and the strip's scroll as UIKit moved them,
+beside the app's own `hold:` and `lights:` lines. Its README has what it
+measured.
 
 ## Measuring latency
 
@@ -1331,7 +1365,8 @@ record field by field.
 - `Tests/checks/`: the pure checks (above). `Tests/touchrig/`: the touch rig
   (above). `Tests/duorig/`: folds and turns the iPhone Duo simulator (TEST
   ONLY, above). `Tests/keyrig/`: a hardware keyboard and mouse for the
-  simulator (TEST ONLY, above). `.github/`: the CI, release and TestFlight workflows, and the
+  simulator (TEST ONLY, above). `Tests/holdrig/`: presses the window
+  thumbnails in the real Debug app on a simulator (TEST ONLY, above). `.github/`: the CI, release and TestFlight workflows, and the
   Sponsor button.
 - `site/`: the website, plain HTML for GitHub Pages: home, download, privacy
   policy, terms of service and support, with the App Store badge

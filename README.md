@@ -69,6 +69,11 @@ Sill has layouts of its own.
   the window under its pointer. Three fingers swipe and pinch as on a Mac's
   trackpad: Mission Control, App Exposé, the Spaces, Apps and Show Desktop,
   through the keyboard shortcuts your Mac has for them.
+- **The windows** of your Mac are live thumbnails in Sill's bar: tap one to
+  show it. Touch and hold one to close, minimize or make it full screen, or
+  keep holding and drag it to another place in the bar. The thumbnail darkens
+  as soon as you touch it, and the hold takes a second, or as long as you set
+  it, from 1 to 5 seconds, in the settings panel on your device.
 - **On iPhone**, held upright, the picture is on top with buttons, keys and a
   trackpad below. Larger Picture, in the settings panel, gives a window's
   picture the room of the window thumbnails, down to where the keyboard comes
