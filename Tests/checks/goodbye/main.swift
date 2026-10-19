@@ -111,6 +111,9 @@ check(out(Goodbye.restarting(mac: "x"), mac: "Studio", device: "iPhone").text ==
       && out(Goodbye.shuttingDown(mac: "x"), mac: "Studio", device: "iPhone").text
           == "Studio is shutting down or restarting. This iPhone reconnects when it’s back.",
       "shutdown and restart: this device's name for the Mac, and its own word")
+check(["sleep", "shutdown", "restart"].allSatisfy { GoodbyePolicy.closesAtOnce(g($0)) }, "the Mac's own going: this device closes the connection at once")
+check(!["quit", "removed", "remoteOff", "internetOff", "busy", "pairingRequired", "update", "", "later", "Sleep"].contains { GoodbyePolicy.closesAtOnce(g($0)) },
+      "every other goodbye: the Mac closes the connection")
 for r in ["sleep", "shutdown", "restart"] {
     check(GoodbyePolicy.isNotice(g(r)), "\(r) is a notice")
     check(out(g(r, "x", reconnect: false)).reconnect && out(g(r, "x", reconnect: false), saved: true).isNotice, "\(r): this build's reconnect, whatever the Mac adds")

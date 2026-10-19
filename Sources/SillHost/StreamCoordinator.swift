@@ -1960,11 +1960,12 @@ package final class StreamCoordinator {
     }
 
     /// The Mac is about to sleep: every connected device hears why (kind 22 "sleep", the Mac's words
-    /// and a reconnect), and its connection closes right after, at most 0.1 s in all, so its status
-    /// line says so at once rather than when its liveness gives up on a Mac gone silent, and its
-    /// reconnect counts the Mac as asleep (GoodbyePolicy, DiscoveryPolicy). One line, only when a
-    /// device was connected. From any thread but the network queue: the server hops onto it
-    /// (`goodbyeAll`), and the Mac's name is a copy.
+    /// and a reconnect), and its connection closes after it (this side's end at once, the device's
+    /// remains read until it closes too, 1 s at most: `goodbyeAll`'s `close`), the goodbye handed to
+    /// the network within 0.1 s, so its status line says so at once rather than when its liveness
+    /// gives up on a Mac gone silent, and its reconnect counts the Mac as asleep (GoodbyePolicy,
+    /// DiscoveryPolicy). One line, only when a device was connected. From any thread but the network
+    /// queue: the server hops onto it (`goodbyeAll`), and the Mac's name is a copy.
     private struct SleepGoodbye: @unchecked Sendable {
         let server: StreamServer
         let mac: String

@@ -3852,6 +3852,12 @@ final class StreamClient: ObservableObject {
                 guard let from, self.connection === from else { return }
                 self.heardGoodbye(goodbye, on: from)
             }
+            // The Mac's own going (GoodbyePolicy.closesAtOnce): this device closes the connection now,
+            // so its session ends at once with these words. The Mac's end of it comes over TLS only at its
+            // cancel, a second later, and from a Mac that has gone to sleep not before it wakes. The
+            // cancel's `.cancelled` brings `connectionLost` after `heardGoodbye` (both on the main queue,
+            // in order), and the Mac, reading what was still sent until this end, closes cleanly.
+            if GoodbyePolicy.closesAtOnce(goodbye), let from { from.cancel() }
         case .clipboard:
             // Text copied on the Mac (StreamClient+Clipboard): written to this device's clipboard while
             // its switch is on. Only from the current connection.

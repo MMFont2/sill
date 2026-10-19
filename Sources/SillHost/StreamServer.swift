@@ -130,7 +130,10 @@ final class StreamServer {
         var lastPointer: MacPointer?
         /// It was told why its connection is about to close (kind 22): the first goodbye says why,
         /// and no second one follows it (a Quit right after the Mac's sleep goodbye, or after the
-        /// device was removed, never replaces what the device was told). On `queue`.
+        /// device was removed, never replaces what the device was told). Nothing else is sent to it
+        /// after its goodbye (a frame, a tick, a pong, a pointer report or a state would follow this
+        /// side's end), and what it still sends is read and dropped until it closes
+        /// (`receiveLoop`). On `queue`.
         var told = false
         init(_ c: NWConnection) { connection = c }
     }
@@ -243,7 +246,7 @@ final class StreamServer {
         // The Mac's pointer, unless the frame-rate sampler has it while it moves.
         let reported = pointerSampler == nil ? samplePointer(now: now) : []
         let data = StreamMessage(kind: .tick, timestamp: now, isKeyframe: false, payload: Data()).serialized()
-        for (id, client) in clients where client.connection.state == .ready {
+        for (id, client) in clients where client.connection.state == .ready && !client.told {
             // A kind 26 just sent keeps its link awake this turn.
             if reported.contains(id) { continue }
             // Over TLS every record costs CPU (the remote plan's H20): skip a tick right after
@@ -274,14 +277,14 @@ final class StreamServer {
     /// (PointerWatch.samplerInterval). Returns the devices sent one.
     @discardableResult
     private func samplePointer(now: TimeInterval) -> Set<ObjectIdentifier> {
-        let ready = clients.compactMap { $0.value.connection.state == .ready ? $0.key : nil }
+        let ready = clients.compactMap { $0.value.connection.state == .ready && !$0.value.told ? $0.key : nil }
         guard let watch = pointerWatch, let reading = watch.sample(devices: ready) else {
             setPointerSampler(interval: nil)
             return []
         }
         var sent = Set<ObjectIdentifier>()
         var watched = false
-        for (id, client) in clients where client.connection.state == .ready {
+        for (id, client) in clients where client.connection.state == .ready && !client.told {
             guard let report = reading.report(for: id, seen: client.inputsRead) else {
                 client.lastPointer = nil
                 continue
@@ -1063,14 +1066,18 @@ final class StreamServer {
     }
 
     /// Every admitted client, home and remote, that was not told why already (`told`) gets
-    /// `goodbye`: the app's Quit and the signal path, "quit", or the reason macOS gave the Quit,
-    /// "restart" or "shutdown" (HostGoodbye.forQuit); the Mac about to sleep, "sleep". With `close`
-    /// (the sleep's) its connection then closes, as `goodbye(_:to:)` closes one, once the message is
-    /// handed to the network or after `within`: the device's session ends at once, with those words,
-    /// not when its liveness gives up on a Mac that went silent. Without it the process is about to
-    /// end and its end closes them. Returns how many were told, once each message was handed to the
-    /// network or after `within` (those not reached by then are not counted). Call from any thread
-    /// but the network queue.
+    /// `goodbye`: the app's Quit and the signal path, "quit", or what HostGoodbye.forQuit makes of the
+    /// reason macOS gave the Quit and of willPowerOff, "restart" or "shutdown"; the Mac about to
+    /// sleep, "sleep". With `close` (the sleep's) its connection then closes as `closeWithGoodbye`
+    /// closes one: the goodbye, then this side's end (FIN; over TLS its close_notify first), then
+    /// what the device still sends read and dropped by its own receive loop (`told`) until it
+    /// closes too, which cancels the connection, at most `DeviceGate.closeWait` after: the device's
+    /// session ends at once, with those words, not when its liveness gives up on a Mac that went
+    /// silent. Cancelling at once instead, with the ticks, pings or input a streaming device keeps
+    /// sending still unread, makes TCP answer with a reset, which can reach the device before the
+    /// goodbye. Without `close` the process is about to end and its end closes them. Returns how
+    /// many were told, once each message was handed to the network or after `within` (those not
+    /// reached by then are not counted). Call from any thread but the network queue.
     @discardableResult
     func goodbyeAll(_ goodbye: Goodbye, within: TimeInterval, close: Bool = false) -> Int {
         let group = DispatchGroup()
@@ -1084,11 +1091,12 @@ final class StreamServer {
                 count.add()
                 group.enter()
                 let c = client.connection
-                c.send(content: data, completion: .contentProcessed { _ in
-                    if close { c.cancel() }
-                    group.leave()
-                })
-                if close { queue.asyncAfter(deadline: .now() + within) { c.cancel() } }
+                if close {
+                    c.send(content: data, contentContext: .finalMessage, isComplete: true, completion: .contentProcessed { _ in group.leave() })
+                    queue.asyncAfter(deadline: .now() + DeviceGate.closeWait) { c.cancel() }
+                } else {
+                    c.send(content: data, completion: .contentProcessed { _ in group.leave() })
+                }
             }
             group.leave()
         }
@@ -1409,6 +1417,9 @@ final class StreamServer {
                 return
             }
             let deliver = { (payload: Data) in
+                // Told why its connection closes (`told`): what it still sends is read and dropped
+                // until it closes, so this side's end never meets unread data (a reset).
+                if client.told { self.receiveLoop(client); return }
                 if header.kind == .input {
                     self.lastInputAt = Date().timeIntervalSince1970
                     if self.tickTimer == nil { self.updateTicking() }
@@ -1490,7 +1501,7 @@ final class StreamServer {
             if message.kind == .frame, message.isKeyframe { lastKeyframeAt = Date().timeIntervalSince1970 }
             var wantKeyframe = false
             defer { if wantKeyframe { onKeyframeNeeded?() } }
-            for client in clients.values where client.connection.state == .ready {
+            for client in clients.values where client.connection.state == .ready && !client.told {
                 if message.kind == .frame, client.route.isRemote {
                     if paceRemote(client, message: message, data: data) { wantKeyframe = true }
                     continue
@@ -1639,6 +1650,7 @@ final class StreamServer {
     private static let graceAfterConnect: TimeInterval = 8.0
 
     private func send(_ data: Data, to client: Client, isFrame: Bool = false, isKeyframe: Bool = false) {
+        guard !client.told else { return }   // after its goodbye, nothing (`told`)
         let now = Date().timeIntervalSince1970
         let remote = client.route.isRemote
         if isFrame, let oldest = client.oldestUnackedFrameAt,

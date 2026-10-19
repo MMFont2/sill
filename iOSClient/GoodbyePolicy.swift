@@ -58,6 +58,15 @@ enum GoodbyePolicy {
     static let knownReasons: Set<String> = [Goodbye.quit, Goodbye.removed, Goodbye.remoteOff, Goodbye.internetOff, Goodbye.busy,
                                             Goodbye.pairingRequired]
 
+    /// Whether this device closes the connection as soon as the goodbye comes rather than waiting
+    /// for the Mac to close it: the Mac's own going, "sleep", "shutdown" or "restart". Its Mac closes
+    /// the connection after the goodbye (reading what the device still sends until then), but over
+    /// TLS its end goes only at its cancel, a second later, and a Mac that has gone to sleep sends
+    /// it only once it wakes, so the device would otherwise wait for its liveness to give up.
+    static func closesAtOnce(_ goodbye: Goodbye) -> Bool {
+        [Goodbye.sleep, Goodbye.shutdown, Goodbye.restart].contains(goodbye.reason)
+    }
+
     /// A goodbye this build shows by the Mac's words: "update", or a reason it does not know (a
     /// kind 22 that did not decode reads as reason "").
     static func isNotice(_ goodbye: Goodbye) -> Bool {
