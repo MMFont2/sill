@@ -31,15 +31,16 @@ and tilt, and is the mouse everywhere else.
 - After the merge (328314f): kind 45; PenStrokes.swift's project IDs A045/F045 (AC01/FC01 are
   HardwareKeyboardPolicy.swift's since #80); the workspace file out; privacy.html's Pencil items between
   `<!-- Pencil` markers (release-checklist part 1 §3 cuts them before the release); sillclient.py's
-  `pencil=`; the docs.
+  `pencil=`; the touch rig compiling PenStrokes.swift and Pen.swift; the docs.
 - Verified (the plan's "Rebased onto main"): `swift build -c release` from `git archive`, only the
   CaptureProbe warning; the iOS app Debug and Release for the simulator and Debug for a device, only the
   StreamClient capture warning; `SillHost --pen-selftest` 37 of 37, nothing posted; `run-all.sh`, all 46;
   `pen` 197 and 5,000 sessions, 92 of 92 mutants; `compatibility` 157, 41 of 41; `pointer-control` 158,
-  33 of 33; `protocol` 193 + 8, PROTOCOL of 24; `menus` 43 of 43; `fence` 33 of 33; H4 against main's
+  33 of 33; `protocol` 193 + 8, 24 of 24; `menus` 43 of 43; `fence` 33 of 33; H4 against main's
   CLI (idle identical; with a client identical but for when its stats seconds fell); H5 and S1 on
   loopback (this host: the pen's enter, tilt, pressure, drags, up and leave, a finger's tap as plain mouse
-  events; main's host, and the app facing it: the mouse alone).
+  events; main's host, and the app facing it: the mouse alone); the touch rig against main's surfaces, 72
+  of 72 (no Pencil: the fingers, the trackpad and the gestures as main's, the palm guards silent).
 - **Untested, for Hunter and Noah (the plan's P0 per-app run and P1–P10, on a device):** pressure and tilt
   in Krita, Blender, Affinity or Photoshop, Pixelmator Pro, Aseprite and a browser canvas; hover, a
   resting palm, a stroke cut by a rotation, a pick or Wi-Fi; the switch; mixed builds; and on this rebase a

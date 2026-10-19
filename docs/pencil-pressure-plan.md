@@ -775,7 +775,7 @@ Verified (2026-10-20, on a Mac busy with other sessions, load averages of 30 to 
 - **`SillHost --pen-selftest`:** 37 ok, "All readings are what was written.", nothing posted.
 - **The checks.** `Tests/checks/run-all.sh`, all 46 (#136's `installed-apps` among them). `pen` 197
   checks and 5,000 random sessions, 92 of 92 mutants; `compatibility` 157, 41 of 41;
-  `pointer-control` 158, 33 of 33; `protocol` 193 and the 8 cross-checks, PROTOCOL of 24; `menus` 309,
+  `pointer-control` 158, 33 of 33; `protocol` 193 and the 8 cross-checks, 24 of 24; `menus` 309,
   43 of 43; `fence` its 17 modes, 33 of 33; `clipboard` 259; `key-strokes` 347;
   `pointer-presence` 165; `gestures` 156; `message-reader`; `hardware-keyboard` 51.
 - **H4**, the CLI's stdout against main's (9a8e30c; both from `git archive`, `--synthetic` on
@@ -793,6 +793,13 @@ Verified (2026-10-20, on a Mac busy with other sessions, load averages of 30 to 
   the host logged H5's sequence; against main's every step went "the mouse's" and the host logged
   plain moves, a down, drags and an up. The mock's Settings panel shows Pencil Pressure under the
   gestures, before Take the Tour.
+- **The touch rig** (`Tests/touchrig`, the gestures plan's H7: the real InputOverlay.swift and
+  TrackpadView.swift under synthesized touches). It builds them from a list of files, which lacked
+  PenStrokes.swift and Pen.swift since the merge, so it no longer compiled ("cannot find type
+  'PenInput' in scope"); with both added (943d3c5), main's surfaces (`--rev origin/main`) against this
+  branch's on a private iPad Pro 11-inch (M5) simulator (iOS 27.0, deleted after): 72 checks, 0
+  failed. The rig drives no Pencil, so this is the fingers' and the trackpad's strokes, the scrolls
+  and their coasts and the gestures as main sends them, with every palm guard in place and silent.
 
 Not run here: anything on a device (P0's per-app run, P1 to P10), and with them, on this rebase, a
 finger's scroll, the iPad's trackpad and a wheel beside the Pencil, and the This iPad group with Share
