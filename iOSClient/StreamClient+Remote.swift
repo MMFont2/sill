@@ -525,8 +525,9 @@ extension StreamClient {
             persistSavedMacs()
         }
         tearDown(status: outcome.text)
+        let note = GoodbyePolicy.reconnectNote(goodbye: goodbye, away: away, mac: name, device: Self.deviceWord)
         reconnect = outcome.reconnect ? lostReconnect(session: s, saved: saved, name: name, remoteAllowed: outcome.remoteAllowed,
-                                                      afterQuit: goodbye?.reason == Goodbye.quit, away: away) : nil
+                                                      afterQuit: GoodbyePolicy.waitsForRowToLeave(goodbye), note: note) : nil
         updateDiscovery()
         if outcome.reconnect {
             scheduleReconnectRetry()
@@ -550,7 +551,9 @@ extension StreamClient {
             afterPairingWatch = nil
             pairing = .idle
         }
-        reconnect = outcome.reconnect ? lostReconnect(session: s, saved: saved, name: name, remoteAllowed: outcome.remoteAllowed) : nil
+        let note = GoodbyePolicy.reconnectNote(goodbye: goodbye, away: nil, mac: name, device: Self.deviceWord)
+        reconnect = outcome.reconnect ? lostReconnect(session: s, saved: saved, name: name, remoteAllowed: outcome.remoteAllowed,
+                                                      afterQuit: GoodbyePolicy.waitsForRowToLeave(goodbye), note: note) : nil
         #if DEBUG
         print("session: the Mac said goodbye (\(goodbye.reason.isEmpty ? "unreadable" : goodbye.reason)): “\(outcome.text)”; \(outcome.reconnect ? "reconnecting" : "not reconnecting")")
         #endif
@@ -559,22 +562,22 @@ extension StreamClient {
     }
 
     /// The automatic reconnect after a session with this Mac ended on its own (§7.4). `afterQuit`:
-    /// the session ended with goodbye `quit`, so the Mac's row that is going is left alone for
-    /// DiscoveryPolicy.quitWait (`reconnectIfListed`); never for a notice.
+    /// the session ended with goodbye `quit`, `sleep` or `shutdown`, so the Mac's row that is going
+    /// is left alone for DiscoveryPolicy.quitWait (`reconnectIfListed`).
     private func lostReconnect(session s: Session?, saved: SavedMac?, name: String, remoteAllowed: Bool,
-                               afterQuit: Bool = false, away: GoodbyePolicy.Away? = nil) -> Reconnect {
+                               afterQuit: Bool = false, note: String? = nil) -> Reconnect {
         let bonjour = s?.bonjourName ?? saved?.bonjourName
         return Reconnect(macID: saved?.macID, bonjourName: bonjour, name: name,
                          lostAt: ProcessInfo.processInfo.systemUptime, pathAtLoss: pathSignature,
                          remoteAllowed: remoteAllowed,
                          rememberedDirect: bonjour.map { directWirelessMacs.contains($0) } ?? false,
-                         afterQuit: afterQuit, away: away)
+                         afterQuit: afterQuit, note: note)
     }
 
-    /// The automatic remote dial's line, with why the session ended (GoodbyePolicy.awayNote).
+    /// The automatic remote dial's line, with why the session ended (GoodbyePolicy.reconnectNote).
     private func remoteReconnectLine(_ name: String) -> String {
         let line = "Reconnecting to \(name) remotely…"
-        return GoodbyePolicy.awayNote(reconnect?.away, device: Self.deviceWord).map { "\(line) \($0)" } ?? line
+        return reconnect?.note.map { "\(line) \($0)" } ?? line
     }
 
     /// The automatic reconnect's look, at every browser change, path change and due time
@@ -636,7 +639,7 @@ extension StreamClient {
                     r.lastRowDialAt = nil
                 }
                 let line = DiscoveryPolicy.reconnectLine(mac: r.name, failed: r.rowDials, direct: mac.direct,
-                                                         note: GoodbyePolicy.awayNote(r.away, device: Self.deviceWord))
+                                                         note: r.note)
                 let due = DiscoveryPolicy.redialRow(failed: r.rowDials, lastDialAt: r.lastRowDialAt, foreground: appInForeground, now: now)
                 guard due.dial else {
                     // Listed, and not dialled now: the line for the dials so far ("…may be asleep…",

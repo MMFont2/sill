@@ -748,9 +748,9 @@ final class StreamClient: ObservableObject {
         var rowListing: Double?
         var rowDials = 0
         var lastRowDialAt: Double?
-        /// The session ended because this device was away (GoodbyePolicy.awayEnd): its "Reconnecting"
-        /// lines say so until the reconnect lands.
-        var away: GoodbyePolicy.Away?
+        /// Why the session ended (`GoodbyePolicy.reconnectNote`): its "Reconnecting" lines carry it
+        /// until the reconnect lands or the line moves on to "…isn’t answering".
+        var note: String?
     }
     var reconnect: Reconnect?
     /// The session's time in the background, from Sill going there with a session up until the

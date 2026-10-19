@@ -1054,21 +1054,31 @@ final class StreamServer {
     }
 
     /// Every admitted client, home and remote, gets `goodbye` (the app's Quit and the signal path:
-    /// "quit"); returns once each message was handed to the network or after `within`. Call from
-    /// any thread but the network queue.
-    func goodbyeAll(_ goodbye: Goodbye, within: TimeInterval) {
+    /// "quit"; before sleep or power off: `close: true` cancels each connection once the message is
+    /// handed to the network or `within` has passed); returns once each message was handed over or
+    /// after `within`. Call from any thread but the network queue.
+    func goodbyeAll(_ goodbye: Goodbye, within: TimeInterval, close: Bool = false) {
         let group = DispatchGroup()
         group.enter()
+        var sentTo: [NWConnection] = []
         queue.async { [self] in
             let data = StreamMessage(kind: .goodbye, timestamp: Date().timeIntervalSince1970, isKeyframe: false,
                                      payload: Wire.encode(goodbye)).serialized()
             for client in clients.values where client.connection.state == .ready {
+                let c = client.connection
+                sentTo.append(c)
                 group.enter()
-                client.connection.send(content: data, completion: .contentProcessed { _ in group.leave() })
+                c.send(content: data, completion: .contentProcessed { _ in
+                    if close { c.cancel() }
+                    group.leave()
+                })
             }
             group.leave()
         }
         _ = group.wait(timeout: .now() + within)
+        if close {
+            queue.async { for c in sentTo { c.cancel() } }
+        }
     }
 
     // MARK: The device gate (DeviceGate)

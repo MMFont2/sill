@@ -1888,9 +1888,13 @@ package final class StreamCoordinator {
     /// process is about to end. The CLI without --virtual-display lets go of the keys, puts a sized
     /// window back and dies of the signal with no goodbye (`releaseKeysForExit`): its devices notice
     /// by liveness.
+    private var saidPowerOffGoodbye = false
+
     package func shutdownForExit() {
         injector.releaseAll()
-        server.goodbyeAll(Goodbye(reason: Goodbye.quit), within: 0.1)
+        if !saidPowerOffGoodbye {
+            server.goodbyeAll(Goodbye(reason: Goodbye.quit), within: 0.1)
+        }
         shuttingDown = true
         restoreFits(keeping: nil)
         stage.release()
@@ -1898,12 +1902,14 @@ package final class StreamCoordinator {
 
     /// The Mac is about to sleep, or to shut down, restart or log out (Sill.app, from NSWorkspace):
     /// every connected device hears why (kind 22 "sleep" or "shutdown", the Mac's words and a
-    /// reconnect, at most 0.1 s), so its status line says so instead of a lost connection's, and it
-    /// looks for the Mac again; nothing else changes here (a shutdown's quit then finds no device).
+    /// reconnect, at most 0.1 s) and its connection is closed, so its status line says so at once
+    /// instead of waiting on a frozen stream or being overwritten by `shutdownForExit`'s "quit".
     package func goodbyeBeforeSleep(shuttingDown: Bool) {
+        if shuttingDown { saidPowerOffGoodbye = true }
         let devices = catalog.clientCount
         guard devices > 0 else { return }
-        server.goodbyeAll(shuttingDown ? Goodbye.shuttingDown(mac: macName) : Goodbye.asleep(mac: macName), within: 0.1)
+        server.goodbyeAll(shuttingDown ? Goodbye.shuttingDown(mac: macName) : Goodbye.asleep(mac: macName),
+                          within: 0.1, close: true)
         print("\(shuttingDown ? "Shutting down" : "Going to sleep"): told \(devices) device\(devices == 1 ? "" : "s") why.")
     }
 

@@ -115,5 +115,17 @@ check(out(g("quit"), saved: true, away: .locked) == out(g("quit"), saved: true),
 check(GoodbyePolicy.awayNote(.locked, device: "iPad") == "(the connection ended while this iPad was locked)", "the reconnect line's note, locked")
 check(GoodbyePolicy.awayNote(.background, device: "iPhone") == "(the connection ended while Sill was in the background)", "the note, in the background")
 check(GoodbyePolicy.awayNote(nil, device: "iPad") == nil, "no note when not away")
+check(GoodbyePolicy.waitsForRowToLeave(g("quit")) && GoodbyePolicy.waitsForRowToLeave(g("sleep")) && GoodbyePolicy.waitsForRowToLeave(g("shutdown")),
+      "quit, sleep and shutdown wait 3 s before dialling a row listed since before the loss")
+check(!GoodbyePolicy.waitsForRowToLeave(nil) && !GoodbyePolicy.waitsForRowToLeave(g("busy")) && !GoodbyePolicy.waitsForRowToLeave(g("later")),
+      "other ends dial a listed row at once")
+check(GoodbyePolicy.reconnectNote(goodbye: g("sleep"), away: nil, mac: "Mac mini", device: "iPad") == "(Mac mini went to sleep)",
+      "reconnect note after sleep goodbye")
+check(GoodbyePolicy.reconnectNote(goodbye: g("shutdown"), away: nil, mac: "Mac mini", device: "iPad") == "(Mac mini was shutting down, restarting or logging out)",
+      "reconnect note after shutdown goodbye")
+check(GoodbyePolicy.reconnectNote(goodbye: g("quit"), away: nil, mac: "Mac mini", device: "iPad") == nil,
+      "no reconnect note after quit")
+check(GoodbyePolicy.reconnectNote(goodbye: nil, away: .locked, mac: "Mac mini", device: "iPad") == "(the connection ended while this iPad was locked)",
+      "reconnect note when this device was away")
 print("\(checks) checks, \(failures) failed")
 exit(failures == 0 ? 0 : 1)

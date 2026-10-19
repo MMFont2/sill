@@ -139,6 +139,23 @@ enum GoodbyePolicy {
         away.map { "(the connection ended while \(awayWords($0, device: device)))" }
     }
 
+    /// True when the Mac is leaving (quit, sleep, shutdown) so a Bonjour row listed since before the
+    /// loss is left alone for `DiscoveryPolicy.quitWait` (`afterQuit`).
+    static func waitsForRowToLeave(_ goodbye: Goodbye?) -> Bool {
+        guard let r = goodbye?.reason else { return false }
+        return r == Goodbye.quit || r == Goodbye.sleep || r == Goodbye.shutdown
+    }
+
+    /// The parenthetical note carried on `"Reconnecting to ‹Mac›…"` when the session ended because
+    /// the Mac went to sleep or shut down, or because this device was away (`awayNote`).
+    static func reconnectNote(goodbye: Goodbye?, away: Away?, mac: String, device: String) -> String? {
+        switch goodbye?.reason {
+        case Goodbye.sleep: return "(\(mac) went to sleep)"
+        case Goodbye.shutdown: return "(\(mac) was shutting down, restarting or logging out)"
+        default: return awayNote(away, device: device)
+        }
+    }
+
     private static func awayWords(_ away: Away, device: String) -> String {
         away == .locked ? "this \(device) was locked" : "Sill was in the background"
     }
