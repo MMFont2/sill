@@ -3,8 +3,9 @@ import UIKit
 
 // TEST ONLY (Tests/touchrig): stand-ins for what TrackpadView.swift and InputOverlay.swift use from the
 // app's other files. HIDKey is the app's own, cut from PortraitStreamScreen.swift by run.sh (with
-// KeyModifiers, where the sources keep it there); StreamProtocol's Input.swift, PointerPresence.swift,
-// TrackpadGestures.swift and KeyChords.swift are compiled in whole where the sources have them.
+// KeyModifiers, where the sources keep it there); StreamProtocol's Input.swift and Pen.swift,
+// PointerPresence.swift, TrackpadGestures.swift, KeyChords.swift, HardwareKeyboardPolicy.swift and
+// PenStrokes.swift are compiled in whole where the sources have them.
 
 enum Palette {
     static let trackpad = Color(red: 0.06, green: 0.07, blue: 0.08)
