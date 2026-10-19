@@ -5859,7 +5859,8 @@ vpnoff|timeout|timeoutip|refused|dns|wrongmac|revoked|notsill|gaveup|quit|remove
 remoteoff` picks remotefail's words), the settings cases `remote|remoteinternet|
 remoteslow|remotepair|remoteoff|noremote`, `-SillSettingsEnd 1` (the panel
 scrolled to its end), `-SillSettingsScroll gestures` (the panel scrolled to its
-This iPad group; the mock Mac takes gestures in every case but `legacy`),
+This iPad group; the mock Mac takes gestures in every case but `legacy`; `hold`, to
+that group's Hold to Show Window Controls row),
 `-Sill.trackpadGestures 0` (the device's Three-Finger Gestures off for one run,
 in the normal app too), `-Sill.thumbnailHold <s>` (the window thumbnails' hold, 1 to 5 s,
 for one run; the console's `hold:` and `lights:` lines stamp each press from touch-down),

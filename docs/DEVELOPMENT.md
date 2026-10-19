@@ -1052,8 +1052,9 @@ simulator:
   `CLAUDE.md`, Build and run, has them all.
 - `-Sill.thumbnailHold 2.5` holds the window thumbnails' hold at 2.5 s for one
   run (1 to 5 s, in the normal app too; the panel's stepper changes nothing
-  while it holds it), and `-SillThumbnailPress 1` draws the first thumbnail
-  pressed, as a finger on it does before the hold.
+  while it holds it), `-SillThumbnailPress 1` draws the first thumbnail
+  pressed, as a finger on it does before the hold, and `-SillSettings 1
+  -SillSettingsScroll hold` opens the Settings panel at the hold's row.
 - `-Sill.trackpadGestures 0` turns the device's Three-Finger Gestures off for
   one run, `-SillSettingsScroll gestures` opens the Settings panel at that
   group, and `-SillVoiceOver 1` shows it as with VoiceOver on. Under `-SillLive 1`, `-SillInputScript '3 gesture swipeUp'` sends a

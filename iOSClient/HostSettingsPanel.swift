@@ -73,15 +73,21 @@ struct HostSettingsPanel: View {
     }
     /// DEBUG `-SillSettingsScroll gestures`: the rows start scrolled to the This iPad group, so a
     /// photo of a short screen shows its switch and rows, which the footnote under them pushes out
-    /// of `-SillSettingsEnd`'s view.
-    private static var startsAtGestures: Bool {
+    /// of `-SillSettingsEnd`'s view; `hold`, to the group's Hold to Show Window Controls row (issue
+    /// #113), which a short screen's panel shows only below the clipboard's rows.
+    private static var startID: String? {
         #if DEBUG
-        return UserDefaults.standard.string(forKey: "SillSettingsScroll") == "gestures"
+        switch UserDefaults.standard.string(forKey: "SillSettingsScroll") {
+        case "gestures": return gesturesGroupID
+        case "hold": return holdRowID
+        default: return nil
+        }
         #else
-        return false
+        return nil
         #endif
     }
     private static let gesturesGroupID = "thisDevice"
+    private static let holdRowID = "thumbnailHold"
     /// `UIAccessibility.isVoiceOverRunning`; DEBUG `-SillVoiceOver 1` says it is, for the harness's
     /// photos of the group's VoiceOver footnote.
     static var voiceOverRunning: Bool {
@@ -102,7 +108,7 @@ struct HostSettingsPanel: View {
                         .scrollIndicatorsFlash(onAppear: true)
                         .scrollBounceBehavior(.basedOnSize)
                         .defaultScrollAnchor(Self.startsAtEnd ? .bottom : .top)
-                        .onAppear { if Self.startsAtGestures { reader.scrollTo(Self.gesturesGroupID, anchor: .top) } }
+                        .onAppear { if let id = Self.startID { reader.scrollTo(id, anchor: .top) } }
                 }
             }
             foot
@@ -531,6 +537,7 @@ struct HostSettingsPanel: View {
                 .fixedSize()
             }
         }
+        .id(Self.holdRowID)
         Footnote(text: ThumbnailHold.footnote)
         Rows {
             Toggle(isOn: $gesturesOn) {

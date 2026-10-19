@@ -10,10 +10,10 @@
 // Environment (simctl launch's SIMCTL_CHILD_ prefix):
 //   RIG_SCRIPT  scenarios, separated by ';': hold S (press the first thumbnail S seconds, then lift),
 //               tap (the second thumbnail, 80 ms), swipe (the third thumbnail, 120 pt left over 0.25 s),
-//               drift (the first, creeping 7.5 pt over 2.5 s), drag (the first: past the hold, then
-//               150 pt right over 0.6 s), set S (Sill.thumbnailHold written as the Settings panel's
-//               stepper writes it, with the strip on screen), wait S. Default "hold 3; tap; swipe; drift;
-//               drag".
+//               drift [D] (the first, the finger creeping D pt to the right over 2.5 s, 7.5 by default),
+//               drag (the first: past the hold, then 150 pt right over 0.6 s), set S (Sill.thumbnailHold
+//               written as the Settings panel's stepper writes it, with the strip on screen), wait S.
+//               Default "hold 3; tap; swipe; drift; drag".
 //   RIG_DELAY   seconds after launch before the first scenario (default 4: the harness's mock first).
 //   RIG_ROUTE   enqueue: the touches go in through UIKit's own HID entry point (`_enqueueHIDEvent:`), so
 //               UIKit makes them, hit-tests and routes them as a finger's; RIG_NORMALIZED=1 gives their
@@ -221,7 +221,12 @@ static void start(void) {
         if ([verb isEqualToString:@"hold"]) addPress(steps, [NSString stringWithFormat:@"hold %.1f s", arg ?: 3], 0, arg ?: 3, 0, 0, 0, 0, 0);
         else if ([verb isEqualToString:@"tap"]) addPress(steps, @"tap", 1, 0.08, 0, 0, 0, 0, 0);
         else if ([verb isEqualToString:@"swipe"]) addPress(steps, @"swipe", 2, 0.5, -120, 0, 0.25, 0.03, 15);
-        else if ([verb isEqualToString:@"drift"]) addPress(steps, @"drift", 0, 2.5, 7.5, 0, 2.4, 0.05, 24);
+        else if ([verb isEqualToString:@"drift"]) {
+            // A finger that is never quite still: D pt to the right (across the strip, the way it scrolls)
+            // in 24 even steps 0.1 s apart from 0.05 s after touch-down, then a lift at 2.5 s.
+            CGFloat d = arg ?: 7.5;
+            addPress(steps, [NSString stringWithFormat:@"drift %.1f pt", d], 0, 2.5, d, 0, 2.4, 0.05, 24);
+        }
         else if ([verb isEqualToString:@"drag"]) {
             double hold = 0;
             NSArray<UIView *> *thumbs = thumbnails(w);

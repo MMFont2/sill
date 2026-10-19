@@ -23,10 +23,10 @@ Tests/holdrig/run.sh UDID APP NAME ['hold 3; tap; swipe; drift; drag'] [-- launc
   .build/dd`. It is installed first.
 - `NAME`: the log, `.build/holdrig/NAME.log`.
 - The script, steps separated by `;`: `hold S` (the first thumbnail, S seconds, then a lift), `tap` (the
-  second, 80 ms), `swipe` (the third, 120 pt left over 0.25 s), `drift` (the first, the finger creeping
-  7.5 pt over 2.5 s), `drag` (the first: past the hold, then 150 pt right over 0.6 s), `set S`
-  (`Sill.thumbnailHold` written as the Settings panel's stepper writes it, the strip on screen), `wait
-  S`. After each press it notes where the strip is and where the pressed thumbnail is now, then taps the
+  second, 80 ms), `swipe` (the third, 120 pt left over 0.25 s), `drift D` (the first, the finger creeping
+  D pt to the right, across the strip, over 2.5 s; 7.5 unless given), `drag` (the first: past the hold,
+  then 150 pt right over 0.6 s), `set S` (`Sill.thumbnailHold` written as the Settings panel's stepper
+  writes it, the strip on screen), `wait S`. After each press it notes where the strip is and where the pressed thumbnail is now, then taps the
   stream under the bar, which puts away the lights if they opened.
 - Launch arguments: `-SillLayout 1000x710` (the harness's mock: no Mac, no network) unless others
   follow `--`, such as `-SillLayout 1000x710 -Sill.thumbnailHold 2.5`.
