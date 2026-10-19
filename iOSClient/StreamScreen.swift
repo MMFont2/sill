@@ -1,5 +1,7 @@
 import SwiftUI
 import Combine
+import UIKit
+import UIKit.UIGestureRecognizerSubclass
 import StreamProtocol
 
 // MARK: - Palette
@@ -115,7 +117,8 @@ struct StreamScreen: View {
     @State private var textScale: Double? = nil
     /// The Aa slider is unfolded (finger down): the bars fade their other buttons meanwhile.
     @State private var scaleOpen = false
-    /// The thumbnail whose traffic-light submenu is open (held for 1.5 s). The bars clip their
+    /// The thumbnail whose traffic-light submenu is open (held for ThumbnailHold's length, 1 s unless
+    /// changed in Settings › This iPad). The bars clip their
     /// content, so the submenu is drawn by this root, anchored to the thumbnail's frame.
     @State private var windowMenu: UInt32? = nil
     /// The Settings panel (the Mac's streaming settings) is open. Up here, next to the drawer, so a
@@ -1553,11 +1556,24 @@ struct WindowStrip: View {
     /// the submenu outside this clipped strip.
     @Binding var menuFor: UInt32?
 
-    /// Press and hold a thumbnail for 1.5 s: it starts to wiggle and its traffic lights (close,
-    /// minimize, full screen) appear in a submenu beside it, the way a held Home Screen icon
-    /// offers its menu. Keep holding and move: the submenu goes, the thumbnail lifts and drags
-    /// into a new slot. The arrangement is the device's own, persisted per Mac. A tap selects.
-    static let holdToOpen: TimeInterval = 1.5
+    /// Press and hold a thumbnail for the hold this device sets (ThumbnailHold: 1 s unless changed
+    /// in Settings › This iPad, from 1 to 5 s; a fixed 1.5 s before issue #113): it starts to wiggle
+    /// and its traffic lights (close, minimize, full screen) appear in a submenu beside it, the way a
+    /// held Home Screen icon offers its menu. From touch-down the thumbnail shows the press: darker,
+    /// and a little smaller by the end of the hold (`ThumbnailHold.look`). Keep holding and move: the
+    /// submenu goes, the thumbnail lifts and drags into a new slot. The arrangement is the device's
+    /// own, persisted per Mac. A tap selects.
+    @AppStorage(ThumbnailHold.key) private var holdStored = ThumbnailHold.standard
+    /// The hold's length, read from UserDefaults as it stands (`ThumbnailHold.seconds(stored:)`: the
+    /// harness's `-Sill.thumbnailHold 2.5` is a string there); `holdStored` is what redraws the strip
+    /// when the Settings panel changes it.
+    private var hold: TimeInterval {
+        _ = holdStored
+        return ThumbnailHold.seconds(stored: UserDefaults.standard.object(forKey: ThumbnailHold.key))
+    }
+    /// The thumbnail a finger is on, from touch-down until the hold fires or the press ends without
+    /// it (a lift, a scroll of the strip).
+    @State private var pressed: UInt32? = nil
     /// What the tour lights of the strip: its thumbnails' band (the strip is as tall as its bar),
     /// with the active halo's 5 pt above and the app badge's 6 pt below.
     static func tourBand(pad: CGFloat) -> EdgeInsets {
@@ -1580,6 +1596,8 @@ struct WindowStrip: View {
                                     width: width, height: height, radius: radius, badge: badge,
                                     menuOpen: menuFor == window.id,
                                     lifted: lifted == window.id,
+                                    pressed: pressed == window.id,
+                                    hold: hold,
                                     onSelect: { client.select(.window(window.id)) },
                                     onCommand: { client.command($0, window: window.id) },
                                     onMove: { step in
@@ -1587,9 +1605,12 @@ struct WindowStrip: View {
                                         client.persistWindowOrder()
                                     })
                         .overlay {
-                            HoldDragOverlay(minimumHold: Self.holdToOpen,
+                            HoldDragOverlay(minimumHold: hold,
                                             onTap: { if menuFor != nil { closeMenu() } else { client.select(.window(window.id)) } },
-                                            onHold: { openMenu(for: window.id) },
+                                            onPress: { down in
+                                                if down { pressed = window.id } else if pressed == window.id { pressed = nil }
+                                            },
+                                            onHold: { pressed = nil; openMenu(for: window.id) },
                                             onMove: { t in holdMoved(window: window, index: index, count: windows.count, slot: slot, translation: t) },
                                             onEnd: { holdEnded(window: window) })
                         }
@@ -1611,18 +1632,21 @@ struct WindowStrip: View {
                                      .init(color: .clear, location: 1)],
                              startPoint: .leading, endPoint: .trailing))
         .onChange(of: client.windows) { _, now in
-            // A window that closed or minimized takes its menu, and any drag, with it.
+            // A window that closed or minimized takes its menu, its press and any drag with it.
             if let id = menuFor, !now.contains(where: { $0.id == id }) { closeMenu() }
+            if let id = pressed, !now.contains(where: { $0.id == id }) { pressed = nil }
             if let id = lifted, !now.contains(where: { $0.id == id }) {
                 lifted = nil; liftOffset = 0
                 client.persistWindowOrder()
             }
         }
-        .onDisappear { lifted = nil; liftOffset = 0 }
+        .onDisappear { lifted = nil; liftOffset = 0; pressed = nil }
         #if DEBUG
-        // Harness: `-SillWindowMenu 1` opens the first window's submenu at launch.
+        // Harness: `-SillWindowMenu 1` opens the first window's submenu at launch; `-SillThumbnailPress 1`
+        // draws the first thumbnail pressed, as a finger on it does before the hold (it stays so).
         .onAppear {
             if UserDefaults.standard.bool(forKey: "SillWindowMenu"), let first = client.orderedWindows.first { menuFor = first.id }
+            if UserDefaults.standard.bool(forKey: "SillThumbnailPress"), let first = client.orderedWindows.first { pressed = first.id }
         }
         #endif
     }
@@ -1664,14 +1688,19 @@ struct WindowStrip: View {
     private func closeMenu() { menuFor = nil }
 }
 
-/// A thumbnail's touch handling, in UIKit: a tap selects; a hold of `minimumHold` opens the
-/// submenu and keeps tracking the finger, so moving it afterwards drags. UIKit rather than SwiftUI
-/// gestures because a SwiftUI long press sequenced with a drag swallowed plain taps inside the
-/// ScrollView (2026-09-23), and UIKit's long press is exactly the Home Screen mechanic: by the time
-/// it recognizes, the scroll view's pan has already given up, so the drag is ours.
+/// A thumbnail's touch handling, in UIKit: a tap selects; a hold of `minimumHold` (ThumbnailHold, the
+/// device's setting) opens the submenu and keeps tracking the finger, so moving it afterwards drags.
+/// `onPress` says when a finger comes down on the thumbnail and when that press ends without the hold
+/// (a lift, a scroll of the strip, another gesture taking the touch), for the press's look. UIKit
+/// rather than SwiftUI gestures because a SwiftUI long press sequenced with a drag swallowed plain taps
+/// inside the ScrollView (2026-09-23), and UIKit's long press is exactly the Home Screen mechanic: by
+/// the time it recognizes, the scroll view's pan has already given up, so the drag is ours. A change
+/// of the setting reaches thumbnails already on screen (`updateUIView`).
 struct HoldDragOverlay: UIViewRepresentable {
     var minimumHold: TimeInterval
     var onTap: () -> Void
+    /// A finger came down on the thumbnail (true), or its press ended before the hold fired (false).
+    var onPress: (Bool) -> Void = { _ in }
     var onHold: () -> Void
     /// Translation since the hold began, in window coordinates (stable while the view moves).
     var onMove: (CGSize) -> Void
@@ -1681,28 +1710,56 @@ struct HoldDragOverlay: UIViewRepresentable {
         let view = UIView()
         view.backgroundColor = .clear
         let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.tapped))
-        let hold = UILongPressGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.held(_:)))
+        let hold = ThumbnailPressRecognizer(target: context.coordinator, action: #selector(Coordinator.held(_:)))
         hold.minimumPressDuration = minimumHold
         hold.allowableMovement = 12        // more than this before the hold fires is a scroll, not a hold
+        hold.pressChanged = { [weak coordinator = context.coordinator] down, recognizer in
+            coordinator?.pressChanged(down, recognizer)
+        }
+        context.coordinator.hold = hold
         view.addGestureRecognizer(tap)
         view.addGestureRecognizer(hold)
         return view
     }
 
-    func updateUIView(_ view: UIView, context: Context) { context.coordinator.parent = self }
+    func updateUIView(_ view: UIView, context: Context) {
+        context.coordinator.parent = self
+        // The Settings panel's stepper reaches the thumbnails already on screen: the next press waits
+        // the new length.
+        if let hold = context.coordinator.hold, hold.minimumPressDuration != minimumHold {
+            hold.minimumPressDuration = minimumHold
+        }
+    }
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     final class Coordinator: NSObject {
         var parent: HoldDragOverlay
+        weak var hold: ThumbnailPressRecognizer?
         private var start = CGPoint.zero
+        /// The hold fired during the press now under way.
+        private var fired = false
         init(_ parent: HoldDragOverlay) { self.parent = parent }
 
         @objc func tapped() { parent.onTap() }
 
+        func pressChanged(_ down: Bool, _ g: ThumbnailPressRecognizer) {
+            if down { fired = false }
+            #if DEBUG
+            HoldConsole.press(down, g, fired: fired)
+            #endif
+            if down || !fired { parent.onPress(down) }
+        }
+
         @objc func held(_ g: UILongPressGestureRecognizer) {
             let p = g.location(in: g.view?.window)
             switch g.state {
-            case .began: start = p; parent.onHold()
+            case .began:
+                start = p
+                fired = true
+                #if DEBUG
+                if let g = g as? ThumbnailPressRecognizer { HoldConsole.held(g) }
+                #endif
+                parent.onHold()
             case .changed: parent.onMove(CGSize(width: p.x - start.x, height: p.y - start.y))
             case .ended, .cancelled, .failed: parent.onEnd()
             default: break
@@ -1710,6 +1767,114 @@ struct HoldDragOverlay: UIViewRepresentable {
         }
     }
 }
+
+/// The thumbnail's long press, telling when a finger comes down on it (UIKit's long press says
+/// nothing until the hold fires) and when that press ends: its own touch-down, which a recognizer gets
+/// at once, whatever the strip's scroll view holds back from views (`delaysContentTouches`), and its
+/// end, at the state's change to failed, cancelled or ended (key-value observed: the strip's scroll
+/// taking the touch fails it from outside) or at the latest at its reset. How it recognizes does not
+/// change. It also notes why a press ended, for the DEBUG console.
+final class ThumbnailPressRecognizer: UILongPressGestureRecognizer {
+    /// A finger came down (true); the press ended (false), once per press.
+    var pressChanged: ((Bool, ThumbnailPressRecognizer) -> Void)?
+    /// The first finger's touch-down (its timestamp, system uptime) while a press is under way.
+    private(set) var downAt: TimeInterval?
+    /// Why the press ended, as far as this recognizer saw (nil: another gesture took the touch).
+    private(set) var ending: Ending?
+    private var startPoint = CGPoint.zero
+    private var watch: NSKeyValueObservation?
+
+    enum Ending: String {
+        case lifted = "the finger lifted"
+        case moved = "the finger moved more than 12 pt"
+        case cancelled = "UIKit cancelled the touch"
+    }
+
+    override init(target: Any?, action: Selector?) {
+        super.init(target: target, action: action)
+        watch = observe(\.state, options: [.new]) { g, _ in
+            switch g.state {
+            case .failed, .cancelled, .ended: g.endPress()
+            default: break
+            }
+        }
+    }
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+        super.touchesBegan(touches, with: event)
+        guard downAt == nil, let touch = touches.first else { return }
+        downAt = touch.timestamp
+        startPoint = touch.location(in: view?.window)
+        ending = nil
+        pressChanged?(true, self)
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
+        if ending == nil, state == .possible, let touch = touches.first {
+            let p = touch.location(in: view?.window)
+            if hypot(p.x - startPoint.x, p.y - startPoint.y) > allowableMovement { ending = .moved }
+        }
+        super.touchesMoved(touches, with: event)
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
+        if ending == nil { ending = .lifted }
+        super.touchesEnded(touches, with: event)
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
+        if ending == nil { ending = .cancelled }
+        super.touchesCancelled(touches, with: event)
+    }
+
+    override func reset() {
+        super.reset()
+        endPress()
+        ending = nil
+    }
+
+    private func endPress() {
+        guard downAt != nil else { return }
+        pressChanged?(false, self)
+        downAt = nil
+    }
+}
+
+#if DEBUG
+/// The console's `hold:` and `lights:` lines (issue #113): when a finger came down on a thumbnail, when
+/// the hold fired and the lights showed, each from touch-down, and why a press ended without the
+/// hold, so a device run (Xcode's console) measures what the person felt.
+enum HoldConsole {
+    /// The last press's touch-down, for the lights' line.
+    static var touchDown: TimeInterval?
+
+    static func press(_ down: Bool, _ g: ThumbnailPressRecognizer, fired: Bool) {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard let at = g.downAt else { return }
+        if down {
+            touchDown = at
+            print(String(format: "hold: touch-down on a thumbnail (the hold is %@), delivered %.3f s after the touch",
+                         ThumbnailHold.valueText(g.minimumPressDuration), now - at))
+        } else if !fired {
+            print(String(format: "hold: the press ended %.3f s after touch-down, before the hold: %@", now - at,
+                         g.ending?.rawValue ?? "another gesture took the touch (the strip's scroll, say)"))
+        } else {
+            print(String(format: "hold: the finger came up %.3f s after touch-down", now - at))
+        }
+    }
+
+    static func held(_ g: ThumbnailPressRecognizer) {
+        guard let at = g.downAt else { return }
+        print(String(format: "hold: held %.3f s after touch-down (the hold is %@): the lights",
+                     ProcessInfo.processInfo.systemUptime - at, ThumbnailHold.valueText(g.minimumPressDuration)))
+    }
+
+    static func lightsShown() {
+        guard let at = touchDown else { print("lights: shown"); return }
+        print(String(format: "lights: shown %.3f s after touch-down", ProcessInfo.processInfo.systemUptime - at))
+    }
+}
+#endif
 
 /// The frame of the thumbnail whose submenu is open, reported up to the screen root.
 struct WindowMenuAnchorKey: PreferenceKey {
@@ -1768,6 +1933,9 @@ struct WindowLightsMenu: View {
                 .transition(.scale(scale: 0.8, anchor: below ? .top : .bottom).combined(with: .opacity))
             }
             .accessibilityLabel("\(window.appName) window actions")
+            #if DEBUG
+            .onAppear { HoldConsole.lightsShown() }
+            #endif
         }
     }
 
@@ -1803,10 +1971,16 @@ private struct WindowThumbnail: View {
     let badge: CGFloat
     let menuOpen: Bool
     let lifted: Bool
+    /// A finger is on it and the hold has not fired: darker at once, and a little smaller by the end
+    /// of `hold` (ThumbnailHold.look).
+    let pressed: Bool
+    let hold: TimeInterval
     /// VoiceOver's routes to what the finger does with a tap, the hold submenu and the drag.
     let onSelect: () -> Void
     let onCommand: (WindowCommand.Action) -> Void
     let onMove: (Int) -> Void
+    /// Under Reduce Motion a press only darkens: nothing shrinks.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         // Two stages: one long chain of modifiers here is more than the type checker will take.
@@ -1822,13 +1996,18 @@ private struct WindowThumbnail: View {
             .accessibilityAction(named: "Move right") { onMove(1) }
     }
 
-    /// The thumbnail with its badge, halo, wiggle and lift.
+    /// The thumbnail with its badge, halo, press, wiggle and lift.
     private var card: some View {
         let halo = RoundedRectangle(cornerRadius: radius + 5, style: .continuous)
             .strokeBorder(Palette.accent, lineWidth: 2)
             .padding(-5)
+        let look = ThumbnailHold.look(pressed: pressed, reduceMotion: reduceMotion)
         return preview
             .frame(width: width, height: height)
+            // The press, from touch-down: the picture darkens at once (a short ease, so a swipe that
+            // becomes a scroll barely shows it) and lightens again if the press ends without the hold.
+            .overlay(Color.black.opacity(look.dim)
+                .animation(.easeOut(duration: pressed ? ThumbnailHold.veilIn : ThumbnailHold.release), value: pressed))
             .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous)
                 .strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
@@ -1844,6 +2023,11 @@ private struct WindowThumbnail: View {
             .offset(y: menuOpen ? -1 : 0)
             .animation(menuOpen ? .easeInOut(duration: 0.13).repeatForever(autoreverses: true) : .easeOut(duration: 0.15),
                        value: menuOpen)
+            // Pressed: a little smaller over the whole hold, so the lights come as it ends; back at
+            // once if the press ends first, or as the hold fires (then the menu's scale takes over).
+            .scaleEffect(look.scale)
+            .animation(pressed ? .linear(duration: ThumbnailHold.shrinkDuration(hold: hold)) : .easeOut(duration: ThumbnailHold.release),
+                       value: pressed)
             .scaleEffect(lifted ? 1.08 : (menuOpen ? 1.04 : 1))
             .shadow(color: .black.opacity(lifted ? 0.45 : 0), radius: 10, y: 4)
             .anchorPreference(key: WindowMenuAnchorKey.self, value: .bounds) { menuOpen ? $0 : nil }

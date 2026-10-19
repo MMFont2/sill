@@ -221,6 +221,14 @@ struct ContentView: View {
 ///   clipboard rows. `-SillClipboardChip 1` offers the clipboard's chip over the mock's stream (as
 ///   after a copy on this device; it stays), and `-SillClipboardNote sent|long|notsent` shows a Paste's
 ///   note in its place and under the group's Paste (docs/clipboard-plan.md).
+/// * `-Sill.thumbnailHold 2.5` — not a harness argument either: how long this device's window
+///   thumbnails are held for their lights (the Settings panel's This iPad group, Hold to Show Window
+///   Controls; docs/thumbnail-hold-plan.md), 1 to 5 s in half seconds, for one run, in the normal app
+///   too (a value between steps or outside the range is taken as the hold takes it; the panel's
+///   stepper changes nothing while the argument holds it). The console's `hold:` lines stamp each
+///   press from touch-down (the hold, its end without the hold and why) and `lights:` when the lights
+///   showed. `-SillThumbnailPress 1` draws the first thumbnail pressed, as a finger on it does before
+///   the hold: darker, and a little smaller once the hold's length has passed (it stays so).
 /// * `-Sill.largerPicture 1` — not a harness argument either: this device's Larger Picture switch
 ///   (the Settings panel's This iPhone group; docs/larger-picture-plan.md) on for one run, in the
 ///   normal app too. A phone held upright then has, while a window streams, no thumbnails, the

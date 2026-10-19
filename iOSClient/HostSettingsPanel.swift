@@ -20,7 +20,8 @@ import StreamProtocol
 /// This iPad (or iPhone), whose switches are preferences here and send nothing to the Mac (Larger
 /// Picture, `StreamClient.largerPictureKey`, on an iPhone without a hinge whose picture it makes
 /// larger, `largerPictureOffered`; Share Clipboard, `StreamClient.clipboardKey`, while the Mac shares
-/// its clipboard, with the system's Paste for this device's text; Three-Finger Gestures,
+/// its clipboard, with the system's Paste for this device's text; Hold to Show Window Controls,
+/// `ThumbnailHold.key`, how long a window's thumbnail is held for its lights; Three-Finger Gestures,
 /// `StreamClient.gesturesKey`), and whose gesture rows, as accessibility actions, do their gestures
 /// (`client.sendGesture`), since VoiceOver keeps three fingers for itself; then Take the Tour.
 struct HostSettingsPanel: View {
@@ -50,6 +51,11 @@ struct HostSettingsPanel: View {
     /// This device's switch for the clipboard (docs/clipboard-plan.md): on unless turned off, read by
     /// StreamClient+Clipboard at each decision; a change subscribes or stops at once.
     @AppStorage(StreamClient.clipboardKey) private var clipboardOn = true
+    /// How long a window's thumbnail is held before its lights show (issue #113,
+    /// docs/thumbnail-hold-plan.md): 1 s unless changed, 1 to 5 s; read by WindowStrip, never sent.
+    /// The stepper shows UserDefaults' value as it stands (`ThumbnailHold.seconds(stored:)`: the
+    /// harness's `-Sill.thumbnailHold` is a string there) and writes through this.
+    @AppStorage(ThumbnailHold.key) private var holdStored = ThumbnailHold.standard
     /// VoiceOver is on: it keeps three-finger swipes and taps for itself, so the This iPad group says
     /// its rows do the gestures instead.
     @State private var voiceOver = HostSettingsPanel.voiceOverRunning
@@ -461,7 +467,8 @@ struct HostSettingsPanel: View {
 
     /// This device's own group, after the Mac's: on an iPhone its switch for Larger Picture, then Share
     /// Clipboard while the Mac shares its clipboard, with Paste on ‹Mac› (the system's Paste control)
-    /// under it while on, then its switch for three-finger gestures, and what each does when the Mac
+    /// under it while on, then how long a window's thumbnail is held for its lights (a stepper, 1 to
+    /// 5 s: issue #113), then its switch for three-finger gestures, and what each does when the Mac
     /// takes them (Take the Tour follows it). After the Mac's rows because it is the least changed, and
     /// the compact halves' 259 pt show the Mac's rows first. The switches reach nothing on the Mac but
     /// the clipboard's, which subscribes or stops; a gesture row, activated by VoiceOver, Voice Control
@@ -505,6 +512,26 @@ struct HostSettingsPanel: View {
             }
             Footnote(text: ClipboardPolicy.Copy.footnote(on: clipboardOn, mac: mac, device: device))
         }
+        // How long a window's thumbnail is held for its lights (issue #113): this device's own, whatever
+        // the Mac, as the thumbnails are. VoiceOver reads "Hold to show window controls, 1 second" and
+        // swipes it up or down a half second at a time.
+        Rows {
+            AdaptiveRow(title: ThumbnailHold.title, since: nil) {
+                HStack(spacing: 10) {
+                    Text(ThumbnailHold.valueText(holdSeconds))
+                        .monospacedDigit()
+                        .foregroundStyle(Palette.muted)
+                        .accessibilityHidden(true)
+                    Stepper(ThumbnailHold.spokenTitle,
+                            value: Binding(get: { holdSeconds }, set: { holdStored = ThumbnailHold.seconds($0) }),
+                            in: ThumbnailHold.range, step: ThumbnailHold.step)
+                        .labelsHidden()
+                        .accessibilityValue(ThumbnailHold.spokenValue(holdSeconds))
+                }
+                .fixedSize()
+            }
+        }
+        Footnote(text: ThumbnailHold.footnote)
         Rows {
             Toggle(isOn: $gesturesOn) {
                 Text("Three-Finger Gestures").foregroundStyle(Palette.text)
@@ -520,6 +547,13 @@ struct HostSettingsPanel: View {
             }
         }
         Footnote(text: gesturesFooter)
+    }
+
+    /// The thumbnail hold's length as WindowStrip reads it (ThumbnailHold); `holdStored` is what redraws
+    /// the row when the stepper changes it.
+    private var holdSeconds: Double {
+        _ = holdStored
+        return ThumbnailHold.seconds(stored: UserDefaults.standard.object(forKey: ThumbnailHold.key))
     }
 
     /// The Mac's window list said it takes the gestures (`WindowList.gestures`).
