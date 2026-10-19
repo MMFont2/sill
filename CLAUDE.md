@@ -48,7 +48,9 @@ the triage of 2026-10-16 and 2026-10-19, `~/Downloads/sill-handoff/triage/`).** 
   pongs for 5 s, the goodbye kept; now it closes at once, and the device's goodbye is its connection's
   alone); the unheld redial (a notice's reconnect dialled the listed row at once).
 - 8aee786's wording for an end in the background or while locked is out (7425327), for a pull request
-  of its own (`git cherry-pick 8aee786`, read with #152).
+  of its own (`git cherry-pick 8aee786`, read with #152). The contributor's 9b59e0d and 34872a5,
+  pushed meanwhile (that observer's guard; a quit's 3 s and a Reconnecting note for sleep and
+  shutdown, and willPowerOff's flag against the quit), are merged in (8754a4f) with this design kept.
 - Verified: `goodbye` 107 checks and 61 of 61 mutants (GoodbyePolicy, HostGoodbye and Remote.swift's
   goodbyes); `policy` 480 and 177 of 177 mutants; `run-all.sh` all 44; `swift build -c release` (only the
   CaptureProbe warning); the iOS app as CI builds it (only the StreamClient capture warning); live on a
