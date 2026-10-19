@@ -259,6 +259,17 @@ func afterSleepPolicy() {
     check("reconnectRow (shut down or restart): an old network row beside a fresh Direct one: the Direct rules",
           row(net: 50, dir: 160, off: 100, 170) == ("direct", nil))
     check("reconnectRow: without a goodbye's hold, the rules as before", row(net: 50, 100) == ("network", nil) && row(net: nil, dir: 50, 56) == ("direct", nil))
+    // A listed row whose listing time is not known (no sighting for its name) counts as listed before
+    // the goodbye: held for good after a shut down or restart, for quitWait after a quit.
+    func unknownSince(quit: Double? = nil, off: Double? = nil, _ now: Double) -> (String?, Double?) {
+        let r = P.reconnectRow(network: "network", networkSince: nil, direct: nil as String?, directSince: nil, networkLeftAt: nil,
+                               quitAt: quit, offAt: off, now: now)
+        return (r.take, r.recheckAt)
+    }
+    check("reconnectRow: a listed row of unknown age is held after a shut down or restart, for good",
+          unknownSince(off: 100, 101) == (nil, nil) && unknownSince(off: 100, 1e6) == (nil, nil))
+    check("reconnectRow: a listed row of unknown age is held after a quit for its 3 s, then taken",
+          unknownSince(quit: 100, 101) == (nil, 103) && unknownSince(quit: 100, 103) == ("network", nil))
 
     // A model of the reconnect after the Mac's own goodbye at t = 0, as the glue runs it (reconnectIfListed:
     // reconnectRow, listingStart on a listing seen afresh, redialRow, waitingLine while not dialling and
