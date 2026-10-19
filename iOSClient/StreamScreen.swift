@@ -1280,9 +1280,12 @@ private struct TopBar: View {
                 .allowsHitTesting(!scaleOpen)
                 .tourTarget(.keyboard)
 
-            button(open: client.active == .desktop, symbol: "desktopcomputer", label: "Desktop",
-                   accessibilityLabel: "Show the full Mac desktop",
-                   action: { client.select(.desktop) })
+            // With two or more of the Mac's displays, which the Desktop shows ("1 of 2"), and a tap while
+            // it streams moves to the next (issue #91, DisplayStepping); with one, as it always was.
+            let desktop = client.desktopFace
+            button(open: client.active == .desktop, symbol: "desktopcomputer", label: desktop.label,
+                   accessibilityLabel: desktop.accessibilityLabel, accessibilityHint: desktop.hint,
+                   action: { client.tapDesktop() })
                 .opacity(scaleOpen ? 0 : 1)
                 .allowsHitTesting(!scaleOpen)
 
@@ -1303,9 +1306,9 @@ private struct TopBar: View {
     }
 
     private func button(open: Bool, symbol: String, label: String, accessibilityLabel: String,
-                        action: @escaping () -> Void) -> some View {
+                        accessibilityHint: String? = nil, action: @escaping () -> Void) -> some View {
         BarButton(open: open, width: metrics.buttonWidth, height: metrics.buttonHeight,
-                  accessibilityLabel: accessibilityLabel, action: action) {
+                  accessibilityLabel: accessibilityLabel, accessibilityHint: accessibilityHint, action: action) {
             VStack(spacing: metrics.buttonSpacing) {
                 Image(systemName: symbol)
                     .font(.system(size: 22))
@@ -1342,17 +1345,20 @@ struct BarButton<Content: View>: View {
     let height: CGFloat
     let radius: CGFloat
     let accessibilityLabel: String
+    /// What a tap does, for VoiceOver; none on every button but the Desktop's with several displays.
+    let accessibilityHint: String?
     let action: () -> Void
     let content: () -> Content
 
     init(open: Bool, width: CGFloat = 66, height: CGFloat = 66, radius: CGFloat = 16,
-         accessibilityLabel: String,
+         accessibilityLabel: String, accessibilityHint: String? = nil,
          action: @escaping () -> Void, @ViewBuilder content: @escaping () -> Content) {
         self.open = open
         self.width = width
         self.height = height
         self.radius = radius
         self.accessibilityLabel = accessibilityLabel
+        self.accessibilityHint = accessibilityHint
         self.action = action
         self.content = content
     }
@@ -1366,6 +1372,15 @@ struct BarButton<Content: View>: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(accessibilityLabel)
+        .modifier(OptionalAccessibilityHint(hint: accessibilityHint))
+    }
+}
+
+/// A hint only where there is one: without, the button is exactly as it was.
+private struct OptionalAccessibilityHint: ViewModifier {
+    let hint: String?
+    @ViewBuilder func body(content: Content) -> some View {
+        if let hint { content.accessibilityHint(hint) } else { content }
     }
 }
 

@@ -535,10 +535,13 @@ struct PortraitStreamScreen: View {
                   })
     }
 
+    /// With two or more of the Mac's displays, which the Desktop shows ("1 of 2"), and a tap while it
+    /// streams moves to the next (issue #91, DisplayStepping); with one, as it always was.
     private func desktopButton(width: CGFloat? = nil) -> some View {
-        barButton(open: client.active == .desktop, symbol: "desktopcomputer", label: "Desktop", width: width,
-                  accessibilityLabel: "Show the full Mac desktop",
-                  action: { client.select(.desktop) })
+        let face = client.desktopFace
+        return barButton(open: client.active == .desktop, symbol: "desktopcomputer", label: face.label, width: width,
+                         accessibilityLabel: face.accessibilityLabel, accessibilityHint: face.hint, largeTitle: face.largeTitle,
+                         action: { client.tapDesktop() })
     }
 
     /// Leave's old slot: Disconnect is the Settings panel's pinned last row now.
@@ -555,10 +558,11 @@ struct PortraitStreamScreen: View {
     /// with the text size, so at the accessibility sizes a long press shows the button large.
     @ViewBuilder
     private func barButton(open: Bool, symbol: String, label: String, width: CGFloat? = nil,
-                           accessibilityLabel: String, action: @escaping () -> Void) -> some View {
+                           accessibilityLabel: String, accessibilityHint: String? = nil, largeTitle: String? = nil,
+                           action: @escaping () -> Void) -> some View {
         if metrics.phone {
             BarButton(open: open, width: width ?? metrics.buttonWidth, height: metrics.buttonHeight,
-                      radius: metrics.buttonRadius, accessibilityLabel: accessibilityLabel,
+                      radius: metrics.buttonRadius, accessibilityLabel: accessibilityLabel, accessibilityHint: accessibilityHint,
                       action: action) {
                 VStack(spacing: metrics.buttonSpacing) {
                     Image(systemName: symbol)
@@ -572,10 +576,10 @@ struct PortraitStreamScreen: View {
                         .minimumScaleFactor(0.85)
                 }
             }
-            .accessibilityShowsLargeContentViewer { Label(label, systemImage: symbol) }
+            .accessibilityShowsLargeContentViewer { Label(largeTitle ?? label, systemImage: symbol) }
         } else {
             BarButton(open: open, width: width ?? metrics.buttonWidth, height: metrics.buttonHeight,
-                      radius: metrics.buttonRadius, accessibilityLabel: accessibilityLabel,
+                      radius: metrics.buttonRadius, accessibilityLabel: accessibilityLabel, accessibilityHint: accessibilityHint,
                       action: action) {
                 VStack(spacing: metrics.buttonSpacing) {
                     Image(systemName: symbol)

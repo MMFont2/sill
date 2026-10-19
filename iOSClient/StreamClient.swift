@@ -250,6 +250,24 @@ final class StreamClient: ObservableObject {
     @Published var thumbnails: [UInt32: UIImage] = [:] // by window ID
     @Published var icons: [String: UIImage] = [:]      // by bundle ID
     @Published var apps: [AppInfo] = []                // installed apps, for "All apps"
+    /// The Mac's displays, and the one its Desktop shows (the window list's `displays` and
+    /// `desktopDisplay`, issue #91; docs/display-stepping-plan.md): what the Desktop button steps through
+    /// (DisplayStepping). Empty and nil from a Mac before them; cleared with the session.
+    @Published private(set) var hostDisplays: [DisplayInfo] = []
+    @Published private(set) var hostDesktopDisplay: UInt32?
+    /// This device's own pick of a display, shown on the button at once and standing over the Mac's
+    /// word until its list names it, or `DisplayStepping.askHold` passes (rule 6): two quick taps step
+    /// twice. Main thread.
+    struct DesktopAsk: Equatable {
+        let display: UInt32
+        let at: Double
+    }
+    @Published private(set) var desktopAsk: DesktopAsk?
+    private var desktopAskExpiry: DispatchWorkItem?
+    #if DEBUG
+    /// The button's face last printed (the console's `desktop button: …`, for the gates).
+    private var loggedDesktopFace: DisplayStepping.Face?
+    #endif
 
     // The Mac's streaming settings (kinds 16 and 17; see the Host settings section below and
     // HostSettingsLedger.swift). Published on main.
@@ -3151,6 +3169,12 @@ final class StreamClient: ObservableObject {
         macName = ""
         windows = []
         active = .none
+        // Nor the Mac's displays, nor this device's pick of one.
+        hostDisplays = []
+        hostDesktopDisplay = nil
+        desktopAsk = nil
+        desktopAskExpiry?.cancel()
+        desktopAskExpiry = nil
         thumbnails = [:]
         icons = [:]
         apps = []
@@ -3173,7 +3197,9 @@ final class StreamClient: ObservableObject {
     // MARK: - Client → host
 
     /// The person's pick (a thumbnail, Desktop, the Apps list): the host streams this source and
-    /// answers with a fresh window list. It counts for the tour as something happening.
+    /// answers with a fresh window list. It counts for the tour as something happening. The Desktop
+    /// picked here (a gesture made over a window) is the display the Desktop button shows; the
+    /// button's own tap steps (`tapDesktop`).
     func select(_ source: StreamSource) {
         noteAction()
         request(source)
@@ -3181,15 +3207,111 @@ final class StreamClient: ObservableObject {
 
     /// Asks the host to stream this source: the person's pick (`select`), or this device's own
     /// request (the Desktop on a connection's first list, a pick made again after a move), which
-    /// is not the person's doing.
+    /// is not the person's doing. The Desktop's names the display the button shows when the Mac
+    /// lists two or more (`desktopPick`); otherwise the pick is today's bytes.
     private func request(_ source: StreamSource) {
+        request(source == .desktop ? desktopPick : SourcePick(source))
+    }
+
+    private func request(_ pick: SourcePick) {
         choicesSent += 1
-        send(.selectSource, Wire.encode(source))
+        send(.selectSource, Wire.encode(pick))
         #if DEBUG
         // Layout harness (mock, no connection): show the pick locally so taps can be checked.
-        if connection == nil { DispatchQueue.main.async { self.active = source } }
+        if connection == nil {
+            DispatchQueue.main.async {
+                self.active = pick.source
+                if let display = pick.display { self.hostDesktopDisplay = display; self.logDesktopFace() }
+            }
+        }
         #endif
     }
+
+    // MARK: The Desktop button (issue #91; DisplayStepping, docs/display-stepping-plan.md)
+
+    /// The Mac's displays the button steps through, and the one it shows (rules 1 and 2).
+    private var desktopSteps: (steps: [DisplayInfo], shown: Int?) {
+        let steps = DisplayStepping.steps(hostDisplays)
+        return (steps, DisplayStepping.shown(steps, desktop: hostDesktopDisplay, asked: desktopAsk?.display))
+    }
+
+    /// What every bar's Desktop button shows and says: today's with fewer than two displays.
+    var desktopFace: DisplayStepping.Face {
+        let d = desktopSteps
+        return DisplayStepping.face(d.steps, shown: d.shown, desktopStreams: active == .desktop)
+    }
+
+    /// This device's own Desktop requests and a gesture's: the display the button shows (rule 7).
+    private var desktopPick: SourcePick {
+        let d = desktopSteps
+        return SourcePick(.desktop, display: DisplayStepping.pick(d.steps, shown: d.shown, desktopStreams: false))
+    }
+
+    /// The Desktop button's tap, in every bar: while the Desktop streams, the next display (with two or
+    /// more), else the display the button shows; today's pick with fewer. A display picked shows on the
+    /// button at once (`desktopAsk`). Returns what went (`-SillInputScript`'s `desktop` step says it).
+    @discardableResult
+    func tapDesktop() -> SourcePick {
+        noteAction()
+        let d = desktopSteps
+        let pick = SourcePick(.desktop, display: DisplayStepping.pick(d.steps, shown: d.shown, desktopStreams: active == .desktop))
+        if let display = pick.display { standDesktopAsk(display) }
+        request(pick)
+        return pick
+    }
+
+    /// This device's pick shows until the Mac's list names it, or `DisplayStepping.askHold` passes.
+    private func standDesktopAsk(_ display: UInt32) {
+        let ask = DesktopAsk(display: display, at: ProcessInfo.processInfo.systemUptime)
+        desktopAsk = ask
+        desktopAskExpiry?.cancel()
+        let hold = DisplayStepping.askHold(rttMs: lastRttMaxMs)
+        let expiry = DispatchWorkItem { [weak self] in
+            guard let self, self.desktopAsk == ask else { return }
+            self.desktopAsk = nil
+            self.logDesktopFace()
+        }
+        desktopAskExpiry = expiry
+        DispatchQueue.main.asyncAfter(deadline: .now() + hold, execute: expiry)
+        logDesktopFace()
+    }
+
+    /// A window list came: the Mac's displays and its Desktop's, and this device's pick taken back once
+    /// the list names it or it is no longer listed. Main thread.
+    private func receiveDisplays(_ list: WindowList) {
+        let displays = list.displays ?? []
+        if hostDisplays != displays { hostDisplays = displays }
+        if hostDesktopDisplay != list.desktopDisplay { hostDesktopDisplay = list.desktopDisplay }
+        if let ask = desktopAsk,
+           !DisplayStepping.askStands(ask.display, askedAt: ask.at, now: ProcessInfo.processInfo.systemUptime,
+                                      hold: DisplayStepping.askHold(rttMs: lastRttMaxMs),
+                                      steps: DisplayStepping.steps(hostDisplays), desktop: hostDesktopDisplay) {
+            desktopAsk = nil
+            desktopAskExpiry?.cancel()
+            desktopAskExpiry = nil
+        }
+        logDesktopFace()
+    }
+
+    /// DEBUG: `desktop button: 1 of 2 (Desktop, Test Pattern, 1 of 2; Shows the next display, Test
+    /// Pattern 2.)` whenever the face changes, for the gates, which read the console.
+    private func logDesktopFace() {
+        #if DEBUG
+        let face = desktopFace
+        guard face != loggedDesktopFace else { return }
+        loggedDesktopFace = face
+        print("desktop button: \(face.label) (\(face.accessibilityLabel)" + (face.hint.map { "; \($0)" } ?? "") + ")")
+        #endif
+    }
+
+    #if DEBUG
+    /// The harness's `-SillDisplays N`: the mock Mac's displays, the Desktop on the first.
+    func showMockDisplays(_ displays: [DisplayInfo]) {
+        hostDisplays = displays
+        hostDesktopDisplay = displays.first?.id
+        logDesktopFace()
+    }
+    #endif
 
     /// The bar's long-press menu: close, minimize or full-screen a window on the Mac.
     func command(_ action: WindowCommand.Action, window id: UInt32) {
@@ -3658,6 +3780,7 @@ final class StreamClient: ObservableObject {
                 let previous = self.active
                 self.windows = list.windows
                 self.active = list.active
+                self.receiveDisplays(list)           // the Desktop button's displays (issue #91)
                 // Forget thumbnails for windows that are gone.
                 let live = Set(list.windows.map(\.id))
                 self.thumbnails = self.thumbnails.filter { live.contains($0.key) }

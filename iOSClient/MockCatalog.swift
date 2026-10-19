@@ -44,6 +44,15 @@ enum MockCatalog {
                    bundleID: "com.apple.Terminal", width: 1400, height: 900),
     ]
 
+    /// `-SillDisplays N` (issue #91): the mock Mac's displays, the first N of these, in the order a Mac
+    /// lists them (the main one first, then those to its right).
+    private static let mockDisplays: [DisplayInfo] = [
+        DisplayInfo(id: 1, name: "Built-in Retina Display", width: 1512, height: 982, main: true),
+        DisplayInfo(id: 69733632, name: "LG UltraFine", width: 2560, height: 1440),
+        DisplayInfo(id: 69733633, name: "DELL U2723QE", width: 2560, height: 1440),
+        DisplayInfo(id: 69733634, name: "Sidecar Display", width: 1180, height: 820),
+    ]
+
     private static let mockApps: [AppInfo] = [
         AppInfo(name: "Calculator", bundleID: "com.apple.calculator"),
         AppInfo(name: "Calendar", bundleID: "com.apple.iCal"),
@@ -93,6 +102,12 @@ enum MockCatalog {
         client.thumbnails = thumbnails
 
         seed(client, settings: settings)
+        // `-SillDisplays N` (issue #91): the mock Mac lists N displays, the Desktop on the first, so the
+        // Desktop button says "1 of N" and a tap while the Desktop streams steps (locally: the mock
+        // shows its own pick). Without it, or with 0, no list, as a Mac from before; with 1, one display:
+        // the button as it always was.
+        let displays = UserDefaults.standard.integer(forKey: "SillDisplays")
+        if displays > 0 { client.showMockDisplays(Array(mockDisplays.prefix(displays))) }
         // `-SillOverlayLine asking|shown|openonmac|locked|noanswer`: Pair This iPad…'s line over a
         // session at home that speaks TLS, as the Mac's answer to its ask sets it (the mock never
         // asks: over it the overlay reads "…is showing a code now." as over a plain door).

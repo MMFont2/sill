@@ -137,6 +137,13 @@ struct ContentView: View {
 ///   only at a synthetic host, or put a relay that drops kind 8 (input) in front of the host.
 /// * `-SillActive none` — start with nothing streaming (also `desktop`, or a window ID like `104`).
 ///   The mock otherwise starts on Code's window, as the boards draw it.
+/// * `-SillDisplays N` — the mock Mac lists N displays (issue #91; docs/display-stepping-plan.md):
+///   "Built-in Retina Display" (the main one) and "LG UltraFine", then "DELL U2723QE" and "Sidecar
+///   Display", the Desktop on the first, so every bar's Desktop button says "1 of N" (VoiceOver:
+///   "Desktop, Built-in Retina Display, 1 of 2"), and a tap while the Desktop streams steps to the next
+///   (the mock shows its own pick). 1: one display, the button as it always was; 0 or none: no list,
+///   as a Mac from before. The console says `desktop button: …` whenever the button's face changes,
+///   in a live session too. Ignored with `-SillLive 1`, whose Mac lists its own.
 /// * `-SillIdiom pad` — draw a screen taller than wide and narrower than 600 pt as an iPad draws
 ///   such a window (the compact halves), not as a phone does (`DuoLayout.phoneArrangement`), so an
 ///   iPhone simulator can photograph it; `phone` the other way round. Also in the normal app.
@@ -289,8 +296,9 @@ struct ContentView: View {
 ///   which have no finger (`InputScript`): `t` is seconds since the session's first window list, and
 ///   a step is `down`, `pad DX,DY`, `lift` or `click` on the portrait pad, `tap X,Y` on the stream
 ///   (a frame fraction), `key USAGE` (a hardware key) or `row USAGE` (a key of the portrait key
-///   row), `esc [MODS]`, `scroll DX,DY`, `wheel DX,DY`, `keyboard attach|detach` or `orient
-///   landscape|portrait` (InputScript has them all). The console says "input script: …" at each.
+///   row), `esc [MODS]`, `scroll DX,DY`, `wheel DX,DY`, `keyboard attach|detach`, `orient
+///   landscape|portrait` or `desktop` (the Desktop button's tap: issue #91) (InputScript has them
+///   all). The console says "input script: …" at each.
 ///   It runs only when the session was dialled by `-SillConnect` to a loopback address and the
 ///   host's first window list has no version
 ///   (Sill.app's always has, and would post the input to this Mac): else "input script: refused:
@@ -646,7 +654,11 @@ struct LayoutHarness: View {
 ///   600 pt/s (so it coasts), through the scroll path its recognizer takes;
 /// * `wheel DX,DY` — a mouse's wheel: the same steps as plain deltas, no gesture, no coast;
 /// * `keyboard attach|detach` — a hardware keyboard attaching or going, as GameController says it;
-/// * `orient landscape|portrait` — the scene asked for that orientation (an iPhone's).
+/// * `orient landscape|portrait` — the scene asked for that orientation (an iPhone's);
+/// * `desktop` — a tap on the Desktop button, through the action every bar's button runs
+///   (`StreamClient.tapDesktop`): with two or more of the Mac's displays, the next one while the
+///   Desktop streams, else the one the button shows; with fewer, today's pick (issue #91). The console
+///   says what went ("input script: t=… desktop: display 2 (Test Pattern 2)").
 /// The pad and the overlay register themselves as they join a window, and each step calls their
 /// own methods, so the feed, the anchor and the sprite get what a finger would give them. The
 /// console prints "input script: t=… <step>" as each runs. Once per launch.
@@ -662,7 +674,7 @@ enum InputScript {
         case down, pad(dx: Double, dy: Double), lift, click, tap(x: Double, y: Double), key(UInt16), row(UInt16)
         case gesture(TrackpadGestures.Gesture, fingers: Int)
         case esc(modifiers: String), scroll(dx: Double, dy: Double), wheel(dx: Double, dy: Double)
-        case keyboard(attached: Bool), orient(String)
+        case keyboard(attached: Bool), orient(String), desktop
 
         var description: String {
             switch self {
@@ -679,6 +691,7 @@ enum InputScript {
             case .wheel(let dx, let dy): return "wheel \(dx),\(dy)"
             case .keyboard(let attached): return "keyboard \(attached ? "attach" : "detach")"
             case .orient(let orientation): return "orient \(orientation)"
+            case .desktop: return "desktop"
             }
         }
 
@@ -732,6 +745,7 @@ enum InputScript {
             case ("wheel", 3) where pair.count == 2: step = .wheel(dx: pair[0], dy: pair[1])
             case ("keyboard", 3) where words[2] == "attach" || words[2] == "detach": step = .keyboard(attached: words[2] == "attach")
             case ("orient", 3) where words[2] == "landscape" || words[2] == "portrait": step = .orient(words[2])
+            case ("desktop", 2): step = .desktop
             default: return nil
             }
             steps.append((at, step))
@@ -812,6 +826,13 @@ enum InputScript {
         case .scroll(let dx, let dy): if let overlay { overlay.scriptScroll(dx: dx, dy: dy, from: .trackpad) } else { done = false }
         case .wheel(let dx, let dy): if let overlay { overlay.scriptScroll(dx: dx, dy: dy, from: .wheel) } else { done = false }
         case .keyboard(let attached): HardwareKeyboardMonitor.shared.scriptSet(attached: attached)
+        case .desktop:
+            let pick = client.tapDesktop()
+            let which = pick.display.map { id in
+                "display \(id)" + (client.hostDisplays.first { $0.id == id }.map { " (\($0.name))" } ?? "")
+            } ?? "the Desktop, no display named (the Mac lists fewer than two)"
+            print(String(format: "input script: t=%.2f ", at) + "desktop: \(which)")
+            return
         case .orient(let orientation):
             let mask: UIInterfaceOrientationMask = orientation == "portrait" ? .portrait : .landscapeRight
             for case let scene as UIWindowScene in UIApplication.shared.connectedScenes {
