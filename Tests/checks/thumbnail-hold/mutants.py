@@ -51,6 +51,11 @@ MUTANTS = [
     ("M33 another title", 'static let title = "Hold to Show Window Controls"', 'static let title = "Thumbnail Hold"'),
     ("M34 another VoiceOver label", 'static let spokenTitle = "Hold to show window controls"', 'static let spokenTitle = "Thumbnail hold"'),
     ("M35 the footnote without the press", "A thumbnail darkens as soon as you touch it.", "A thumbnail darkens when you hold it."),
+    ("M36 a swipe the wrong way", "seconds(seconds(value) + (up ? step : -step))", "seconds(seconds(value) + (up ? -step : step))"),
+    ("M37 a whole second a swipe", "seconds(seconds(value) + (up ? step : -step))", "seconds(seconds(value) + (up ? 2 * step : -2 * step))"),
+    ("M38 a swipe out of the range", "seconds(seconds(value) + (up ? step : -step))", "seconds(value) + (up ? step : -step)"),
+    ("M39 a swipe from the value as given", "seconds(seconds(value) + (up ? step : -step))", "seconds(value + (up ? step : -step))"),
+    ("M40 no swipe down", "seconds(seconds(value) + (up ? step : -step))", "seconds(seconds(value) + (up ? step : 0))"),
 ]
 caught = 0
 for name, old, new in MUTANTS:

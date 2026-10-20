@@ -41,6 +41,13 @@ enum ThumbnailHold {
         return range.lowerBound + ((kept - range.lowerBound) / step).rounded(.toNearestOrAwayFromZero) * step
     }
 
+    /// The length one step up or down from `value`, as the stepper's + and − give it, for VoiceOver's
+    /// swipe up or down on the Settings row (one adjustable element): half a second, kept in the range
+    /// (5 s up stays 5 s), from the length `value` is taken as.
+    static func adjusted(_ value: Double, up: Bool) -> Double {
+        seconds(seconds(value) + (up ? step : -step))
+    }
+
     /// What a stored value means, whatever UserDefaults hands back: a number (a Double, an Int or a
     /// Bool, each an NSNumber there), or a string as a launch argument gives it
     /// (`-Sill.thumbnailHold 2.5`). Nothing stored, or nothing that reads as a number, is the standard

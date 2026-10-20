@@ -75,6 +75,25 @@ for k in -400...1000 {
 }
 check("length: a longer value never gives a shorter hold", monotonic)
 
+// MARK: - One step up or down (VoiceOver's swipe on the Settings row, an adjustable element)
+
+let ups = zip(H.choices, H.choices.dropFirst())
+check("step: up from each choice is the next", ups.allSatisfy { H.adjusted($0, up: true) == $1 })
+check("step: down from each choice is the one before", ups.allSatisfy { H.adjusted($1, up: false) == $0 })
+check("step: up from 5 s stays 5 s", H.adjusted(5, up: true) == 5)
+check("step: down from 1 s stays 1 s", H.adjusted(1, up: false) == 1)
+check("step: from the standard, up is 1.5 s and down stays 1 s",
+      H.adjusted(H.standard, up: true) == 1.5 && H.adjusted(H.standard, up: false) == 1)
+check("step: from a length between steps, from the step it is taken as (2.2 s is 2 s: up 2.5, down 1.5)",
+      H.adjusted(2.2, up: true) == 2.5 && H.adjusted(2.2, up: false) == 1.5)
+check("step: from a length outside the range, from its end (7 s down is 4.5 s, 0.2 s up is 1.5 s)",
+      H.adjusted(7, up: false) == 4.5 && H.adjusted(0.2, up: true) == 1.5 && H.adjusted(7, up: true) == 5)
+check("step: from nothing usable, from the standard (up 1.5 s)", H.adjusted(.nan, up: true) == 1.5 && H.adjusted(.nan, up: false) == 1)
+var stepsUp = H.range.lowerBound, walked = [stepsUp]
+for _ in 0..<12 { stepsUp = H.adjusted(stepsUp, up: true); walked.append(stepsUp) }
+check("step: twelve swipes up from 1 s pass every choice once and stop at 5 s",
+      Array(walked.prefix(H.choices.count)) == H.choices && walked.dropFirst(H.choices.count).allSatisfy { $0 == 5 })
+
 // MARK: - What a stored value means
 
 let stored: [(Any?, Double, String)] = [

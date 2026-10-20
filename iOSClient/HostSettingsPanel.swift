@@ -519,22 +519,33 @@ struct HostSettingsPanel: View {
             Footnote(text: ClipboardPolicy.Copy.footnote(on: clipboardOn, mac: mac, device: device))
         }
         // How long a window's thumbnail is held for its lights (issue #113): this device's own, whatever
-        // the Mac, as the thumbnails are. VoiceOver reads "Hold to show window controls, 1 second" and
-        // swipes it up or down a half second at a time.
+        // the Mac, as the thumbnails are.
         Rows {
             AdaptiveRow(title: ThumbnailHold.title, since: nil) {
                 HStack(spacing: 10) {
                     Text(ThumbnailHold.valueText(holdSeconds))
                         .monospacedDigit()
                         .foregroundStyle(Palette.muted)
-                        .accessibilityHidden(true)
                     Stepper(ThumbnailHold.spokenTitle,
                             value: Binding(get: { holdSeconds }, set: { holdStored = ThumbnailHold.seconds($0) }),
                             in: ThumbnailHold.range, step: ThumbnailHold.step)
                         .labelsHidden()
-                        .accessibilityValue(ThumbnailHold.spokenValue(holdSeconds))
                 }
                 .fixedSize()
+                // One element, as a slider is: VoiceOver reads "Hold to show window controls, 1 second,
+                // adjustable" and a swipe up or down moves it a half second (Switch Control and Full
+                // Keyboard Access adjust it the same way). A stepper alone is two buttons, Decrement and
+                // Increment, each read with the title and the value.
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(ThumbnailHold.spokenTitle)
+                .accessibilityValue(ThumbnailHold.spokenValue(holdSeconds))
+                .accessibilityAdjustableAction { direction in
+                    switch direction {
+                    case .increment: holdStored = ThumbnailHold.adjusted(holdSeconds, up: true)
+                    case .decrement: holdStored = ThumbnailHold.adjusted(holdSeconds, up: false)
+                    @unknown default: break
+                    }
+                }
             }
         }
         .id(Self.holdRowID)

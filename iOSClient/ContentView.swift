@@ -244,7 +244,8 @@ struct ContentView: View {
 ///   hold it), so a live run shows the one new viewport each switch sends.
 /// * `-SillAXDump <s>` — `s` seconds after the stream screen shows, the console lists its
 ///   accessibility elements in the order the accessibility tree hands them to VoiceOver ("ax: 1
-///   Open the app list (33,463 55×50)"). SwiftUI builds that tree only for an assistive technology:
+///   Open the app list (33,463 55×50)"; an element's value and "adjustable" follow its label, as
+///   VoiceOver reads them). SwiftUI builds that tree only for an assistive technology:
 ///   on a private simulator, `xcrun simctl spawn UDID defaults write com.apple.Accessibility
 ///   ApplicationAccessibilityEnabled -bool true` first. In the mock and the normal app.
 /// * `-SillVoiceOver 1` — the Settings panel acts as if VoiceOver were on: the This iPad group's

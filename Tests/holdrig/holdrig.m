@@ -12,7 +12,9 @@
 //               tap (the second thumbnail, 80 ms), swipe (the third thumbnail, 120 pt left over 0.25 s),
 //               drift [D] (the first, the finger creeping D pt to the right over 2.5 s, 7.5 by default),
 //               drag (the first: past the hold, then 150 pt right over 0.6 s), set S (Sill.thumbnailHold
-//               written as the Settings panel's stepper writes it, with the strip on screen), wait S.
+//               written as the Settings panel's stepper writes it, with the strip on screen), ax up|down
+//               (VoiceOver's swipe on the Settings panel's Hold to Show Window Controls row, with
+//               `-SillSettings 1 -SillSettingsScroll hold` and the simulator's accessibility on), wait S.
 //               Default "hold 3; tap; swipe; drift; drag".
 //   RIG_DELAY   seconds after launch before the first scenario (default 4: the harness's mock first).
 //   RIG_ROUTE   enqueue: the touches go in through UIKit's own HID entry point (`_enqueueHIDEvent:`), so
@@ -89,8 +91,12 @@ static UIWindow *keyWindow(void) {
     return nil;
 }
 
-/// The thumbnails' touch views: a view with a long press of 0.75 s or more (the trackpad's and the
-/// stream's long presses are 0.45 s), left to right.
+static UIScrollView *stripOf(UIView *v);
+static CGPoint centre(UIView *v);
+
+/// The thumbnails' touch views a finger can reach: a view with a long press of 0.75 s or more (the
+/// trackpad's and the stream's long presses are 0.45 s) whose middle shows in its strip (a strip
+/// scrolled by a swipe hides some), left to right.
 static NSArray<UIView *> *thumbnails(UIWindow *window) {
     NSMutableArray<UIView *> *found = [NSMutableArray array];
     NSMutableArray<UIView *> *queue = [NSMutableArray arrayWithObject:window];
@@ -99,7 +105,9 @@ static NSArray<UIView *> *thumbnails(UIWindow *window) {
         [queue removeObjectAtIndex:0];
         for (UIGestureRecognizer *g in v.gestureRecognizers) {
             if ([g isKindOfClass:UILongPressGestureRecognizer.class] && ((UILongPressGestureRecognizer *)g).minimumPressDuration >= 0.75 && !v.hidden) {
-                [found addObject:v];
+                UIScrollView *strip = stripOf(v);
+                CGRect shown = strip ? [strip convertRect:strip.bounds toView:nil] : window.bounds;
+                if (CGRectContainsPoint(CGRectIntersection(shown, window.bounds), centre(v))) [found addObject:v];
                 break;
             }
         }
@@ -136,6 +144,42 @@ static void watchAll(NSArray<UIView *> *thumbs) {
     }];
     UIScrollView *strip = stripOf(thumbs.firstObject);
     if (strip) [watcher watch:strip.panGestureRecognizer as:@"strip's scroll"];
+}
+
+/// The accessibility element whose label starts with `prefix`, walking the tree as an assistive
+/// technology does (an element, else its `accessibilityElements`, else its element count, else its
+/// subviews), as the app's `-SillAXDump` does. SwiftUI builds the tree only for an assistive technology:
+/// the simulator's `ApplicationAccessibilityEnabled` first (README).
+static NSObject *axFind(id object, NSString *prefix, int depth) {
+    if (depth > 60 || ![object isKindOfClass:NSObject.class]) return nil;
+    NSObject *e = object;
+    if (e.accessibilityElementsHidden) return nil;
+    if (e.isAccessibilityElement) return [e.accessibilityLabel hasPrefix:prefix] ? e : nil;
+    NSArray *children = e.accessibilityElements;
+    if (children.count) {
+        for (id c in children) { NSObject *f = axFind(c, prefix, depth + 1); if (f) return f; }
+        return nil;
+    }
+    NSInteger n = [e accessibilityElementCount];
+    if (n != NSNotFound && n > 0) {
+        for (NSInteger i = 0; i < n; i++) { NSObject *f = axFind([e accessibilityElementAtIndex:i], prefix, depth + 1); if (f) return f; }
+        return nil;
+    }
+    if ([e isKindOfClass:UIView.class])
+        for (UIView *v in ((UIView *)e).subviews) {
+            if (v.hidden || v.alpha <= 0) continue;
+            NSObject *f = axFind(v, prefix, depth + 1);
+            if (f) return f;
+        }
+    return nil;
+}
+
+/// What VoiceOver would read of an element: its label, its value, and "adjustable".
+static NSString *axReading(NSObject *e) {
+    NSMutableString *s = [NSMutableString stringWithString:e.accessibilityLabel ?: @"(no label)"];
+    if (e.accessibilityValue.length) [s appendFormat:@", %@", e.accessibilityValue];
+    if (e.accessibilityTraits & UIAccessibilityTraitAdjustable) [s appendString:@", adjustable"];
+    return s;
 }
 
 /// Runs `steps` one after another on the main queue: each block returns the seconds to wait before
@@ -238,6 +282,29 @@ static void start(void) {
                 [NSUserDefaults.standardUserDefaults setDouble:arg forKey:@"Sill.thumbnailHold"];
                 say(@"=== set Sill.thumbnailHold to %.1f s", arg);
                 return 1.0;
+            }];
+        } else if ([verb isEqualToString:@"ax"]) {
+            // VoiceOver's swipe up or down on the Settings panel's Hold to Show Window Controls row
+            // (`-SillSettings 1 -SillSettingsScroll hold`): accessibilityIncrement or Decrement on the
+            // element, then what it reads, the stored setting and the first thumbnail's hold.
+            NSString *way = parts.count > 1 ? parts[1] : @"up";
+            BOOL up = ![way isEqualToString:@"down"];
+            __block NSObject *row = nil;
+            [steps addObject:^double{
+                row = axFind(keyWindow(), @"Hold to show window controls", 0);
+                if (!row) { say(@"ax: no element whose label starts \"Hold to show window controls\""); return 0; }
+                say(@"=== ax %@: the row reads \"%@\"", up ? @"up" : @"down", axReading(row));
+                if (up) [row accessibilityIncrement]; else [row accessibilityDecrement];
+                return 0.6;
+            }];
+            [steps addObject:^double{
+                if (!row) return 0;
+                NSObject *now = axFind(keyWindow(), @"Hold to show window controls", 0) ?: row;
+                NSArray<UIView *> *thumbs = thumbnails(keyWindow());
+                say(@"ax: now \"%@\"; Sill.thumbnailHold %@; the first thumbnail's hold %.2f s", axReading(now),
+                    [NSUserDefaults.standardUserDefaults objectForKey:@"Sill.thumbnailHold"],
+                    thumbs.count ? holdOf(thumbs.firstObject).minimumPressDuration : -1.0);
+                return 0.4;
             }];
         } else if ([verb isEqualToString:@"wait"]) [steps addObject:^double{ return arg; }];
         else if (verb.length) say(@"unknown step %@", raw);

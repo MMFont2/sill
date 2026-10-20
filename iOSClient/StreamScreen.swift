@@ -591,7 +591,8 @@ struct StreamScreen: View {
 
     /// `-SillAXDump`: walks the key window as an assistive technology does (an element, else its
     /// `accessibilityElements`, else its element count, else its subviews) and prints one line per
-    /// element: "ax: 1 Apps (14,454 76×50)".
+    /// element: "ax: 1 Apps (14,454 76×50)", its value and "adjustable" after the label when it has
+    /// them.
     private static func accessibilityDump() {
         guard let window = UIApplication.shared.connectedScenes.compactMap({ ($0 as? UIWindowScene)?.keyWindow }).first else {
             print("ax: no key window"); return
@@ -603,7 +604,11 @@ struct StreamScreen: View {
                   seen.insert(ObjectIdentifier(element)).inserted else { return }
             if element.isAccessibilityElement {
                 let f = element.accessibilityFrame
-                let label = element.accessibilityLabel ?? element.accessibilityValue ?? "(no label)"
+                var label = element.accessibilityLabel ?? element.accessibilityValue ?? "(no label)"
+                // What VoiceOver reads after the label: the value, and "adjustable" for a stepper or a
+                // slider ("Hold to show window controls, 1 second, adjustable").
+                if element.accessibilityLabel != nil, let value = element.accessibilityValue, !value.isEmpty { label += ", \(value)" }
+                if element.accessibilityTraits.contains(.adjustable) { label += ", adjustable" }
                 lines.append("\(label) (\(Int(f.minX)),\(Int(f.minY)) \(Int(f.width))×\(Int(f.height)))")
                 return
             }
@@ -1932,6 +1937,11 @@ struct WindowLightsMenu: View {
                 .position(x: x, y: y)
                 .transition(.scale(scale: 0.8, anchor: below ? .top : .bottom).combined(with: .opacity))
             }
+            // A container named for the window, whose three buttons keep their own names (Close,
+            // Minimize, Full Screen). The label alone on this stack, which is no element of its own,
+            // went to every element inside it, so VoiceOver read each light as "‹App› window actions"
+            // (found by Tests/devicerig on PR #166).
+            .accessibilityElement(children: .contain)
             .accessibilityLabel("\(window.appName) window actions")
             #if DEBUG
             .onAppear { HoldConsole.lightsShown() }
@@ -1956,7 +1966,8 @@ struct WindowLightsMenu: View {
             .frame(width: 60)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(label) window")
+        // Its name as it shows (Close, Minimize, Full Screen), which Voice Control says too.
+        .accessibilityLabel(label)
     }
 }
 
