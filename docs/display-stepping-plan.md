@@ -299,7 +299,7 @@ as for `nohup`), so a `kill -INT` there does nothing.
   for 72 compiles. v0.5.1's StreamProtocol (`git archive v0.5.1`), compiled with a reader of the
   payloads the compatibility check writes: the window list with `displays` and `desktopDisplay`
   decodes, and `{"desktop":{"display":69733632}}` reads as `.desktop`.
-- **H5.** `Tests/checks/run-all.sh`: RUNALL
+- **H5.** `Tests/checks/run-all.sh`: not run yet (the pause at 09:00 came first).
 - **H6, the host's rules (`sillclient.py` against this branch's CLI).** `SILL_TEST_DISPLAYS=2`, the
   client picking the Desktop, then `desktop:2` at 4 s, a bitrate at 8, `desktop` at 12 and
   `desktop:99` at 16: "TEST: the Desktop is 2 test patterns (SILL_TEST_DISPLAYS), Test Pattern
@@ -317,10 +317,33 @@ as for `nohup`), so a `kill -INT` there does nothing.
 - **H7, against v0.5.1's CLI.** `desktop:2` and `desktop:69733632` from the client: the Desktop
   restarted for each (as any Desktop pick does there), nothing refused, its lists without
   `displays`.
-- **S1, photos.** PHOTOS
-- **S2, live.** LIVE
-- **S3, against v0.5.1's host.** OLDHOST
-- **S4, VoiceOver's words.** AXDUMP
+- **This pass (main at 4d990e9 merged in, c9cfbeb).** `swift build -c release` in the worktree, no
+  warning; the iOS app, `CODE_SIGNING_ALLOWED=NO`: Debug for the simulator as CI builds it, Release for
+  the simulator and Debug for a generic device, each only the `StreamClient` capture warning
+  (StreamClient.swift:3830) and appintentsmetadataprocessor's note. `display-stepping` 105 checks
+  (4,000 sessions: 40,417 taps judged from the Desktop and 10,662 from a window, 24,617 older devices'
+  picks, 6,706 displays unplugged, 1,979 under the Desktop, 3,397 full turns), `compatibility` 121,
+  `protocol` all passing, `clipboard` 259; `display-stepping`'s mutants, 29 of the 42 run before the
+  pause, every one caught. H2 against main's CLI at 4d990e9 (each from `git archive`): idle 35 s, 7
+  lines identical masked and sorted, and in order; with a client picking the Desktop for 12 s, 25
+  lines identical masked and sorted, the non-stats lines identical in order, 13 stats lines each; this
+  branch's lists carry `displays=1:Test Pattern:1512x949:main desktopDisplay=1`, main's none.
+- **S1, photos (in part).** 54 harness photos on a private iPad Pro 13-inch (M4) simulator, iOS 27.0
+  (deleted after): the Duo's four sizes (951x669 and 669x951 with `-SillHinge half`, 466x678,
+  678x466), an iPad's (1000x710, 744x1133) and a phone's (402x812; 440x894 with Larger Picture;
+  874x402), each with `-SillDisplays 2`, `1` and none, the Desktop streaming and a window. With two:
+  "1 of 2" under the symbol in every bar (TopBar, the iPad's portrait window bar, the phone's row 1 of
+  five and of six beside Menus), lit while the Desktop streams, the buttons' sizes unchanged. One
+  display against none: identical in all 18 pairs (the home indicator's rows left out: three caught it
+  mid-fade). Against main's build at 4d990e9 (the same 18 without displays): 11 identical; 7 differ
+  by 1 to 4 in a channel in the thumbnail strip alone (its active ring and its fade; never the Desktop
+  button), while main's retakes of four of them were identical to main's own. So this build draws the
+  strip a shade differently in those layouts. Not found yet: the first suspect is BarButton's optional
+  hint (`OptionalAccessibilityHint`, a conditional view), the next pass finds the cause and removes it,
+  since with one display the bars must be main's pixel for pixel.
+- **S2 (live, two test displays, three taps, then one gone), S3 (against v0.5.1's SillHost, built from
+  `git archive v0.5.1` this pass), S4 (VoiceOver's words, `-SillAXDump`) and H5:** not run before the
+  pause.
 
 ## Progress
 
@@ -330,3 +353,8 @@ as for `nohup`), so a `kill -INT` there does nothing.
 - 2026-10-20, the next run: read what the first had built and kept it; main at 9a8e30c (#136)
   merged in (ci.yml's matrix and CLAUDE.md's Layout, both sides kept); a stopped capture's display
   read again before the restart (7cc8bcc); #173 in the plan; the Results.
+- 2026-10-20, a third run: main at 4d990e9 merged in (ci.yml's matrix, both kept, sorted); #173's
+  comparison and which should land; rule 3 and the wire said exactly; README and support name the
+  main display; the builds, the touched checks, H2 and S1 in part. Paused at 09:00 (the maintainer's
+  laptop). What remains: the strip's shade against main (S1), S2, S3, S4, H5, the 13 mutants not run,
+  CLAUDE.md's Verified and Untested lines, then merge main again and push.
