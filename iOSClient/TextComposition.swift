@@ -10,8 +10,9 @@ import StreamProtocol
 // and sent only once chosen (or, as it stands, when the Mac's caret is about to move or the input view
 // lets go of it), and what was typed since the Mac's caret was last moved by something else, so
 // dictation and an input method can revise what they put there (a dictated word corrected a moment
-// later: backspaces on the Mac, then the new text). Beside it, `TextInputRules`: which input moves the
-// Mac's caret, and whose ⌃Space it is.
+// later: backspaces on the Mac, then the new text; Korean's syllables built again as each letter comes,
+// through a selection: `selection`). Beside it, `TextInputRules`: which input moves the Mac's caret,
+// and whose ⌃Space it is.
 //
 // Pure: Foundation and StreamProtocol's InputEvent only, checked on its own with swiftc
 // (Tests/checks/text-composition). Offsets are UTF-16, as UITextInput's are; the Mac is sent whole
@@ -34,6 +35,15 @@ struct TextComposition: Equatable {
     private(set) var marked: String?
     /// The selection inside the marked text, relative to its start (UTF-16).
     private(set) var markedSelection = NSRange(location: 0, length: 0)
+    /// What the text system selected of what was sent (UTF-16), for its next edit, which replaces it as in
+    /// any text field: Korean's input method selects the syllables it is still building, deletes them and
+    /// types them again (한ㄱ selected, deleted, then 한 and 그 typed; with the selection ignored, 한글
+    /// reached the Mac as 한한한글 in the iPad simulator, 2026-10-20), and the text system selects the
+    /// character a backspace deletes. Never empty and never while composing: nil is the caret at the
+    /// end, where every edit, a forget and a trim put it back. An empty selection elsewhere (the caret
+    /// moved, as the on-screen keyboard's trackpad does) is not kept: the Mac's caret cannot be moved
+    /// from here.
+    private(set) var selection: NSRange?
     /// Which document the text system's positions were taken in: each `forget` and each trim
     /// starts a new one, as every offset moves then. A correction whose range was taken in an older one
     /// is stale wherever its offsets fall now (`replace`).
@@ -54,24 +64,44 @@ struct TextComposition: Equatable {
         marked.map { NSRange(location: sent.utf16.count, length: $0.utf16.count) }
     }
 
-    /// The caret is at the end, or where the input method put it inside the marked text.
+    /// The caret is at the end, or where the input method put it inside the marked text, or what the text
+    /// system selected for its next edit.
     var selectedRange: NSRange {
-        guard marked != nil else { return NSRange(location: length, length: 0) }
+        guard marked != nil else { return selection ?? NSRange(location: length, length: 0) }
         return NSRange(location: sent.utf16.count + markedSelection.location, length: markedSelection.length)
     }
 
-    /// Text typed or committed: it replaces the marked text, if any, and goes to the Mac.
-    mutating func insert(_ text: String) -> [Output] {
-        commit(sent + text)
+    /// The text system selects `range` of the document for its next edit: kept, inside what was sent,
+    /// when it selects something while nothing is being composed (the input method's own selection is
+    /// the marked text's then); an empty one, the caret moved, puts the caret back at the end.
+    mutating func select(_ range: NSRange) {
+        guard marked == nil else { return }
+        let count = sent.utf16.count
+        let start = min(max(range.location, 0), count)
+        let end = min(max(range.location + range.length, start), count)
+        selection = end > start ? NSRange(location: start, length: end - start) : nil
     }
 
-    /// The input method's composition so far (an empty one ends it: nothing is sent).
-    mutating func setMarked(_ text: String?, selected: NSRange) {
-        guard let text, !text.isEmpty else { marked = nil; markedSelection = NSRange(location: 0, length: 0); return }
+    /// Text typed or committed: it replaces the marked text if there is any, else the selection if there
+    /// is one, and goes to the Mac.
+    mutating func insert(_ text: String) -> [Output] {
+        if marked == nil, let selection { return commit(sentReplacing(selection, with: text)) }
+        return commit(sent + text)
+    }
+
+    /// The input method's composition so far (an empty one ends it: nothing is sent). One that starts
+    /// over a selection replaces it, as in a text field: the selected text goes from the Mac first, and
+    /// the composition follows what was sent, as every composition does here.
+    @discardableResult
+    mutating func setMarked(_ text: String?, selected: NSRange) -> [Output] {
+        guard let text, !text.isEmpty else { marked = nil; markedSelection = NSRange(location: 0, length: 0); return [] }
+        var out: [Output] = []
+        if marked == nil, let selection { out = commit(sentReplacing(selection, with: "")) }
         marked = text
         let count = text.utf16.count
         let location = min(max(selected.location, 0), count)
         markedSelection = NSRange(location: location, length: min(max(selected.length, 0), count - location))
+        return out
     }
 
     /// The composition is accepted as it stands: sent.
@@ -80,14 +110,16 @@ struct TextComposition: Equatable {
         return commit(sent + marked)
     }
 
-    /// Backspace: inside a composition it edits the composition; otherwise one backspace to the Mac,
-    /// whether or not this side still remembers what it deletes.
+    /// Backspace: inside a composition it edits the composition; otherwise it deletes the selection if
+    /// there is one, else one backspace to the Mac, whether or not this side still remembers what it
+    /// deletes.
     mutating func deleteBackward() -> [Output] {
         if var text = marked {
             text.removeLast()
             setMarked(text, selected: NSRange(location: text.utf16.count, length: 0))
             return []
         }
+        if let selection { return commit(sentReplacing(selection, with: "")) }
         guard !sent.isEmpty else { return [.backspaces(1)] }
         return commit(String(sent.dropLast()))
     }
@@ -120,6 +152,7 @@ struct TextComposition: Equatable {
         let out = unmark()
         sent = ""
         generation += 1
+        selection = nil
         return out
     }
 
@@ -132,10 +165,21 @@ struct TextComposition: Equatable {
         guard wantsTrim else { return }
         sent = String(sent.suffix(Self.keep))
         generation += 1
+        selection = nil
     }
 
-    /// The document becomes `new`, all of it sent: backspaces over what differs, then the rest.
+    /// What was sent with `range` of it (UTF-16) replaced by `text`: a selection's edit.
+    private func sentReplacing(_ range: NSRange, with text: String) -> String {
+        let units = Array(sent.utf16)
+        let lower = min(range.location, units.count), upper = min(range.location + range.length, units.count)
+        return String(utf16CodeUnits: Array(units[..<lower]), count: lower) + text
+            + String(utf16CodeUnits: Array(units[upper...]), count: units.count - upper)
+    }
+
+    /// The document becomes `new`, all of it sent: backspaces over what differs, then the rest. The caret
+    /// is at the end again.
     private mutating func commit(_ new: String) -> [Output] {
+        selection = nil
         marked = nil
         markedSelection = NSRange(location: 0, length: 0)
         let old = Array(sent), now = Array(new)

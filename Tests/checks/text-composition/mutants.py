@@ -10,7 +10,7 @@ INPUT = os.path.join(ROOT, "Sources/StreamProtocol/Input.swift")
 orig = open(SRC).read()
 MUTANTS = [
     # The composition stays on the device until it is committed
-    ("T1 a typed candidate keeps the composition before it (sent twice)", "        commit(sent + text)\n", "        commit(document + text)\n"),
+    ("T1 a typed candidate keeps the composition before it (sent twice)", "        return commit(sent + text)\n", "        return commit(document + text)\n"),
     ("T2 an empty composition stays one", "guard let text, !text.isEmpty else {", "guard let text else {"),
     ("T3 the input method's caret unclamped", "let location = min(max(selected.location, 0), count)", "let location = max(selected.location, 0)"),
     ("T4 the selection's length unclamped", "length: min(max(selected.length, 0), count - location))", "length: max(selected.length, 0))"),
@@ -80,6 +80,26 @@ MUTANTS = [
      "        sent = String(sent.suffix(Self.keep))\n"),
     ("T45 the document a correction was taken in ignored", "        if let taken, taken != generation { return [] }\n", ""),
     ("T46 every edit starts a new document", "        sent = new\n        return out\n", "        sent = new\n        generation += 1\n        return out\n"),
+    # What the text system selects, for its next edit
+    ("S1 text typed over a selection is added after it (Korean's syllables twice)",
+     "        if marked == nil, let selection { return commit(sentReplacing(selection, with: text)) }\n", ""),
+    ("S2 a backspace over a selection deletes one character", "        if let selection { return commit(sentReplacing(selection, with: \"\")) }\n", ""),
+    ("S3 an empty selection kept (typing goes where the caret moved)",
+     "selection = end > start ? NSRange(location: start, length: end - start) : nil", "selection = NSRange(location: start, length: end - start)"),
+    ("S4 a selection kept while an input method composes", "    mutating func select(_ range: NSRange) {\n        guard marked == nil else { return }\n",
+     "    mutating func select(_ range: NSRange) {\n"),
+    ("S5 a selection not cut at the end", "let end = min(max(range.location + range.length, start), count)", "let end = max(range.location + range.length, start)"),
+    ("S6 an edit keeps the selection", "        selection = nil\n        marked = nil\n", "        marked = nil\n"),
+    ("S7 a forget keeps the selection", "        generation += 1\n        selection = nil\n        return out\n", "        generation += 1\n        return out\n"),
+    ("S8 a trim keeps the selection", "        generation += 1\n        selection = nil\n    }\n", "        generation += 1\n    }\n"),
+    ("S9 a composition over a selection keeps the selected text",
+     "        if marked == nil, let selection { out = commit(sentReplacing(selection, with: \"\")) }\n", ""),
+    ("S10 the selection never reported to the text system", "guard marked != nil else { return selection ?? NSRange(location: length, length: 0) }",
+     "guard marked != nil else { return NSRange(location: length, length: 0) }"),
+    ("S11 a selection's edit leaves out what follows it", "            + String(utf16CodeUnits: Array(units[upper...]), count: units.count - upper)", "            + \"\""),
+    ("S12 a selection one unit short at its start", "let lower = min(range.location, units.count), upper", "let lower = min(range.location + 1, units.count), upper"),
+    ("S13 an empty composition drops a selection", "guard let text, !text.isEmpty else { marked = nil; markedSelection = NSRange(location: 0, length: 0); return [] }",
+     "guard let text, !text.isEmpty else { marked = nil; markedSelection = NSRange(location: 0, length: 0); selection = nil; return [] }"),
 ]
 caught = 0
 for name, old, new in MUTANTS:

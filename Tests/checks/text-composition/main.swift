@@ -3,9 +3,10 @@
 // and text that leave the Mac's text equal to the document (#138). What was typed is kept whole while
 // the text system may revise it (a long dictation's corrections land where they were made), trimmed only
 // past its limit, and a correction whose range was taken before a forget or a trim sends nothing,
-// wherever its offsets fall now. Then TextInputRules: which input moves the Mac's caret, which input
-// modes are keyboards, and whose ⌃Space it is. Scenario by scenario, then 20,000 seeded random edit sequences against a model of the Mac's
-// text field.
+// wherever its offsets fall now; what the text system selects is replaced by its next edit (Korean's
+// syllables). Then TextInputRules: which input moves the Mac's caret, which input modes are keyboards,
+// and whose ⌃Space it is. Scenario by scenario, then 25,000 seeded random edit sequences against a model
+// of the Mac's text field.
 //   swiftc -O iOSClient/TextComposition.swift Sources/StreamProtocol/Input.swift \
 //       Tests/checks/text-composition/main.swift -o check && ./check
 import Foundation
@@ -203,6 +204,83 @@ do {   // dictation's last correction of a phrase (its punctuation and capitals)
           c.replace(NSRange(location: 1, length: 1), with: "你", taken: marked) == [] && c.length == 0 && mac == "earlier helloyㄋ")
 }
 
+do {   // Korean: the input method selects the syllables it is still building, deletes them and types them
+       // again, as each letter comes (2-Set on a hardware keyboard in the iPad simulator, 2026-10-20: g k s
+       // r m f, 한글; ignoring the selection, the Mac got 한한한글)
+    var c = C()
+    var mac = ""
+    apply(c.insert("ㅎ"), to: &mac)
+    c.select(NSRange(location: 0, length: 1))
+    apply(c.deleteBackward(), to: &mac)
+    apply(c.insert("하"), to: &mac)
+    c.select(NSRange(location: 0, length: 1))
+    apply(c.deleteBackward(), to: &mac)
+    apply(c.insert("한"), to: &mac)
+    apply(c.insert("ㄱ"), to: &mac)
+    c.select(NSRange(location: 0, length: 2))
+    check("a selection is kept for the next edit", c.selection == NSRange(location: 0, length: 2) && c.selectedRange == NSRange(location: 0, length: 2))
+    let deleted = c.deleteBackward()
+    apply(deleted, to: &mac)
+    check("a backspace deletes the selection, all of it", deleted == [.backspaces(2)] && mac == "" && c.selection == nil)
+    apply(c.insert("한"), to: &mac)
+    apply(c.insert("그"), to: &mac)
+    c.select(NSRange(location: 1, length: 1))
+    apply(c.deleteBackward(), to: &mac)
+    apply(c.insert("글"), to: &mac)
+    check("Korean's syllables reach the Mac once: 한글", mac == "한글" && c.document == "한글")
+}
+
+do {   // a selection's edit, wherever it is, then the caret at the end again
+    var c = C()
+    var mac = ""
+    apply(c.insert("abcd"), to: &mac)
+    c.select(NSRange(location: 1, length: 2))           // "bc"
+    let out = c.insert("X")
+    apply(out, to: &mac)
+    check("text typed over a selection replaces it", out == [.backspaces(3), .text("Xd")] && mac == "aXd")
+    check("…and the caret is at the end again", c.selection == nil && c.selectedRange == NSRange(location: 3, length: 0))
+    c.select(NSRange(location: 1, length: 0))           // the caret moved, nothing selected
+    check("an empty selection is not kept: the caret stays at the end", c.selection == nil && c.selectedRange == NSRange(location: 3, length: 0))
+    apply(c.insert("e"), to: &mac)
+    check("…and typing goes on at the end", mac == "aXde")
+    c.select(NSRange(location: 2, length: 99))
+    check("a selection past the end is cut at the end", c.selection == NSRange(location: 2, length: 2))
+    c.select(NSRange(location: -3, length: 4))
+    check("…and one from before the start at the start", c.selection == NSRange(location: 0, length: 1))
+    c.select(NSRange(location: 9, length: 2))
+    check("…and one wholly past the end is none", c.selection == nil)
+    c.select(NSRange(location: 3, length: 1))
+    apply(c.replace(NSRange(location: 0, length: 1), with: "A", taken: c.generation), to: &mac)
+    check("a correction ends the selection", c.selection == nil && mac == "AXde")
+    c.select(NSRange(location: 0, length: 1))
+    apply(c.forget(), to: &mac)
+    check("a forget ends it", c.selection == nil && c.selectedRange == NSRange(location: 0, length: 0))
+    let emoji = c.insert("a👍🏽")
+    apply(emoji, to: &mac)
+    c.select(utf16Range(c.sent, characters: 1..<2))
+    let gone = c.deleteBackward()
+    apply(gone, to: &mac)
+    check("a selected emoji is one backspace", gone == [.backspaces(1)] && c.sent == "a")
+}
+
+do {   // a selection and a composition
+    var c = C()
+    var mac = ""
+    apply(c.insert("ab"), to: &mac)
+    c.select(NSRange(location: 1, length: 1))
+    let out = c.setMarked("ㄋ", selected: NSRange(location: 1, length: 0))
+    apply(out, to: &mac)
+    check("a composition over a selection replaces it: the selected text goes from the Mac first",
+          out == [.backspaces(1)] && mac == "a" && c.document == "aㄋ" && c.selection == nil)
+    c.select(NSRange(location: 0, length: 1))
+    check("no selection is kept while an input method composes", c.selection == nil && c.selectedRange == NSRange(location: 2, length: 0))
+    apply(c.insert("你"), to: &mac)
+    check("…and its candidate follows what was sent", mac == "a你")
+    c.select(NSRange(location: 0, length: 1))
+    check("an empty composition with nothing composed sends nothing and leaves a selection as it was",
+          c.setMarked("", selected: NSRange(location: 0, length: 0)) == [] && c.selection == NSRange(location: 0, length: 1) && mac == "a你")
+}
+
 do {   // the tail: kept whole to its limit, trimmed past it, never while composing
     var c = C()
     _ = c.insert(String(repeating: "字", count: C.limit))
@@ -217,7 +295,9 @@ do {   // the tail: kept whole to its limit, trimmed past it, never while compos
     check("…and a trim then does nothing", c.sent.count == C.limit + 1 && c.marked == "ㄅ" && c.generation == 0)
     c.setMarked(nil, selected: NSRange(location: 0, length: 0))
     let lastCharacter = NSRange(location: c.length - 1, length: 1)
+    c.select(lastCharacter)
     c.trim()
+    check("a trim ends a selection", c.selection == nil)
     check("a trim keeps the last characters", c.sent.count == C.keep && c.sent.hasSuffix("字x") && !c.wantsTrim)
     check("…and starts a new document", c.generation == 1)
     check("…so a correction taken before it sends nothing",
@@ -295,14 +375,16 @@ struct Seeded: RandomNumberGenerator {
 }
 var generator = Seeded(state: 0x5111_0138)
 
-/// `runs` sequences of 12 edits each from `alphabet`, with forgets, stale corrections and trims among
-/// them when `forgets`, against a model of the Mac's text field: it always ends with what is
-/// remembered, and is exactly that while nothing was forgotten; a new document (`generation`) comes
-/// with a forget or a trim, and only then. The first failure is printed; the number of failed runs, and
-/// of stale corrections tried (past the end, and taken in a document since forgotten), are returned.
-func randomRuns(_ runs: Int, alphabet: [String], forgets: Bool) -> (fails: Int, stale: Int, taken: Int) {
+/// `runs` sequences of 12 edits each from `alphabet`, with selections among them, and forgets, stale
+/// corrections and trims when `forgets`, against a model of the Mac's text field: it always ends with
+/// what is remembered, and is exactly that while nothing was forgotten; a new document (`generation`)
+/// comes with a forget or a trim, and only then; a selection is never empty, never while composing,
+/// inside what was sent, and gone after an edit. The first failure is printed; the number of failed
+/// runs, of stale corrections tried (past the end, and taken in a document since forgotten), and of
+/// selections an edit replaced, are returned.
+func randomRuns(_ runs: Int, alphabet: [String], forgets: Bool) -> (fails: Int, stale: Int, taken: Int, replaced: Int) {
     func word() -> String { (0..<Int.random(in: 1...3, using: &generator)).map { _ in alphabet.randomElement(using: &generator)! }.joined() }
-    var failed = 0, staleTried = 0, takenTried = 0
+    var failed = 0, staleTried = 0, takenTried = 0, replaced = 0
     var firstFailure: String?
     for run in 0..<runs {
         var c = C()
@@ -313,13 +395,17 @@ func randomRuns(_ runs: Int, alphabet: [String], forgets: Bool) -> (fails: Int, 
         for step in 0..<12 {
             let before = c
             var why: String?
-            let op = Int.random(in: 0..<(forgets ? 10 : 5), using: &generator)
+            let op = forgets ? Int.random(in: 0..<11, using: &generator) : [0, 1, 2, 3, 4, 9].randomElement(using: &generator)!
             switch op {
             case 0: apply(c.insert(word()), to: &mac)
             case 1:
                 let w = word()
-                c.setMarked(w, selected: NSRange(location: Int.random(in: 0...w.utf16.count, using: &generator), length: 0))
-                if c.sent != before.sent { why = "a composition changed what was sent" }
+                apply(c.setMarked(w, selected: NSRange(location: Int.random(in: 0...w.utf16.count, using: &generator), length: 0)), to: &mac)
+                if let selected = before.selection {
+                    if c.sent != (before.sent as NSString).replacingCharacters(in: selected, with: "") {
+                        why = "a composition over a selection did not replace it"
+                    }
+                } else if c.sent != before.sent { why = "a composition changed what was sent" }
             case 2: apply(c.unmark(), to: &mac)
             case 3: apply(c.deleteBackward(), to: &mac)
             case 4:
@@ -354,8 +440,22 @@ func randomRuns(_ runs: Int, alphabet: [String], forgets: Bool) -> (fails: Int, 
                 takenTried += 1
                 let out = c.replace(range, with: word(), taken: generation)
                 if out != [] || c != before { why = "a correction taken before a forget changed something" }
+            case 9:
+                // A selection of whole characters of what was sent (UIKit's never split one), or the caret
+                // moved inside it.
+                let chars = Array(c.sent)
+                let a = Int.random(in: 0...chars.count, using: &generator)
+                let b = Int.random(in: a...chars.count, using: &generator)
+                c.select(utf16Range(c.sent, characters: a..<b))
+                if c.sent != before.sent || c.marked != before.marked { why = "a selection changed the document" }
             default: break
             }
+            if why == nil, let selected = c.selection,
+               c.isComposing || selected.length == 0 || selected.location + selected.length > c.sent.utf16.count {
+                why = "a selection while composing, empty, or past what was sent"
+            }
+            if why == nil, [0, 3, 4, 5].contains(op), c.selection != nil { why = "an edit or a forget kept the selection" }
+            if before.selection != nil, [0, 1, 3].contains(op) { replaced += 1 }
             let newDocument = op == 5 || (op == 7 && before.wantsTrim)
             if why == nil, c.generation != before.generation + (newDocument ? 1 : 0) {
                 why = "the document's generation moved without a forget or a trim, or stayed through one"
@@ -372,7 +472,7 @@ func randomRuns(_ runs: Int, alphabet: [String], forgets: Bool) -> (fails: Int, 
         }
     }
     if let firstFailure { print("     \(firstFailure)") }
-    return (failed, staleTried, takenTried)
+    return (failed, staleTried, takenTried, replaced)
 }
 
 // Forgets among the edits. No lone combining mark here: one typed right after a forget joins a
@@ -382,9 +482,11 @@ check("20,000 seeded random sequences: the Mac's text always ends with what is r
       forgetful.fails == 0)
 check("…stale corrections among them (\(forgetful.stale) past the end, \(forgetful.taken) taken before a forget), none of which sent anything",
       forgetful.stale > 1_000 && forgetful.taken > 1_000)
+check("…and \(forgetful.replaced) selections replaced by the next insert, backspace or composition", forgetful.replaced > 1_000)
 // No forget: a combining mark that joins the character before it is retyped with it.
 let joining = randomRuns(5_000, alphabet: ["a", "e", "\u{301}", "👍", "\u{1F3FD}", "ㄋ", "ˇ", " "], forgets: false)
 check("5,000 seeded random sequences with combining marks and skin tones: the Mac's text is what was sent", joining.fails == 0)
+check("…\(joining.replaced) selections among them replaced", joining.replaced > 500)
 
 print("\(passes) passed, \(fails) failed")
 exit(fails == 0 ? 0 : 1)

@@ -1016,12 +1016,22 @@ extension InputOverlayView {
     var selectedTextRange: UITextRange? {
         get { Range(composition.selectedRange, composition.generation) }
         set {
-            // The caret stays at the end: the Mac's caret cannot be moved from here.
-            #if DEBUG
-            if let asked = newValue.flatMap(offsets)?.range, asked != composition.selectedRange {
-                Self.textinput("selectedTextRange (\(asked.location),\(asked.length)) asked for, not taken: the caret stays at the end")
+            // What the text system selects of what was typed is kept for its next edit, which replaces it
+            // (Korean's syllables built again, a backspace's character: TextComposition.selection); a caret
+            // moved without a selection stays at the end, as the Mac's caret cannot be moved from here. A
+            // range taken before a forget or a trim points at nothing now.
+            guard let (asked, taken) = newValue.flatMap(offsets) else { return }
+            guard taken == composition.generation else {
+                Self.textinput("selectedTextRange (\(asked.location),\(asked.length)) asked for, taken before a forget: not taken")
+                return
             }
-            #endif
+            composition.select(asked)
+            if asked != composition.selectedRange {
+                Self.textinput("selectedTextRange (\(asked.location),\(asked.length)) asked for, not taken: "
+                               + (composition.isComposing ? "the input method composes" : "the caret stays at the end"))
+            } else if composition.selection != nil {
+                Self.textinput("selected (\(asked.location),\(asked.length)) of what was typed, for the next edit")
+            }
         }
     }
 
@@ -1030,8 +1040,7 @@ extension InputOverlayView {
     func setMarkedText(_ markedText: String?, selectedRange: NSRange) {
         Self.textinput("setMarkedText \(markedText?.debugDescription ?? "nil") (\(selectedRange.location),\(selectedRange.length))")
         setOwnPointer(nil, .none)
-        composition.setMarked(markedText, selected: selectedRange)
-        showComposition()
+        typed(composition.setMarked(markedText, selected: selectedRange))
     }
 
     func unmarkText() {
