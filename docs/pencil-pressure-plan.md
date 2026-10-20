@@ -803,6 +803,44 @@ Verified (2026-10-20, on a Mac busy with other sessions, load averages of 30 to 
   failed. The rig drives no Pencil, so this is the fingers' and the trackpad's strokes, the scrolls
   and their coasts and the gestures as main sends them, with every palm guard in place and silent.
 
+Main again at 4d990e9 (#87, the virtual display's `BOOL` encoding, and #88, the universal Mac app),
+merged as d8984a6: only ci.yml's mutants matrix conflicted, and it lists both new checks, `pen` and
+`virtual-display-api`, sorted (46 checks, every folder with a `mutants.py`). Hunter's pull request #175,
+opened on 2026-10-19 from this branch at 1546dfc with his hover cursor on top (kind 46 `cursorKind`, the
+plan's Q1), found that `clipboard`'s mutant "clipboard 1 by default" no longer applied once
+`WindowList`'s init went on to `pencil:` (its pattern ended the line at `clipboard: Int? = nil) {`), so
+`clipboard/run.sh --mutants` failed on this branch too; his fix, 5c39211, is here as f85aa49,
+cherry-picked with his authorship. Run again on that head (2026-10-20, load averages of 3 to 990 from
+other sessions):
+
+- **Builds.** `swift build -c release` from `git archive` of f85aa49, only the CaptureProbe warning; the
+  iOS app from an empty derived-data folder in Debug for the simulator (CI's command) and Release, and
+  in Debug for a generic device, only the StreamClient capture warning (StreamClient.swift:3780),
+  PenStrokes.swift compiled and no file skipped (no iOS input has changed since 716a80a).
+- **`SillHost --pen-selftest`:** 37 ok, "All readings are what was written.", exit 0.
+- **The checks.** `Tests/checks/run-all.sh`, all 47 (`virtual-display-api` the new one), in 27 min 33 s;
+  `pen` 197 checks and 5,000 sessions (what it compiles, StreamProtocol, PenTablet.swift, PenStrokes.swift
+  and the check, is byte for byte what the 92-of-92 mutant run above compiled); `clipboard` 259 checks
+  its mutants not run to the end here (the first 9 of 72 caught when the run was stopped for a pause;
+  Hunter's #175 reports 72 of 72 with the same pattern).
+- **H4** against main's CLI (4d990e9; both from `git archive`, `--synthetic` on loopback with the
+  software encoder): idle for 45 s identical masked and sorted (8 lines); with a Desktop client for 15 s,
+  three runs: two identical (29 lines), the third but for the counters of its last stats second; leaving
+  out the stats and heartbeat lines, every run identical, with the same stats keys. A test host started
+  in the background of a shell script inherits SIGINT ignored and keeps it ignored (main's
+  `HostShutdown.installKeyRelease` does too), so these runs stop it with SIGTERM.
+- **H5**, the dry run fed by `sillclient.py`: this host's window list says `clipboard=1 pencil=1`, and its
+  log reads the pen entering, a hover at tilt 0.47,0.26, the down at 454,475 pen 0.200, drags at 0.400,
+  0.800 and 1.000 with their tilts, the up at 0.000, a hover at tilt 0.35,-0.11, a finger's tap as plain
+  mouse events with no leave before it, and the pen leaving (`in.dry` 12). Main's host says only
+  `clipboard=1`, skips kind 45 and logs the tap alone (`in.dry` 3).
+- **S1**, on a private iPad Pro 13-inch (M4) simulator (iOS 27.0, deleted after), `-SillLive 1
+  -SillConnect` with `-SillInputScript`'s pen steps: against this host every step went "a pen's" and
+  the host logged H5's sequence; against main's every step went "the mouse's" (kind 8) and the host
+  logged plain moves, a down, three drags and an up. Harness photos at 1000x710 (`-SillSettings 1`,
+  `-SillSettingsScroll gestures` and `pencil`): This iPad reads Share Clipboard and Paste on ‹Mac›,
+  Three-Finger Gestures with its rows, Pencil Pressure (on) with its footnote, then Take the Tour.
+
 Not run here: anything on a device (P0's per-app run, P1 to P10), and with them, on this rebase, a
 finger's scroll, the iPad's trackpad and a wheel beside the Pencil, and the This iPad group with Share
 Clipboard on a real iPad. The open questions (§12) keep their defaults.

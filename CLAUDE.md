@@ -9,7 +9,7 @@ Formerly winstream; the folder still carries the old name.
 ## Current step
 
 **Apple Pencil pressure and tilt (2026-10-20, branch `pencil-pressure-rebased` from main at d1fa97e,
-main at 68e880e merged in since: Hunter Ahlquist's `pencil-pressure` (HunterAhlquist/sill at a85fba7;
+main at 4d990e9 merged in since: Hunter Ahlquist's `pencil-pressure` (HunterAhlquist/sill at a85fba7;
 issue #81) merged as it is, his five commits keeping their authorship, then the maintainer's;
 docs/pencil-pressure-plan.md has the plan, the open questions with their defaults, every result and the
 rebase).** Noah: "Work on Apple Pencil pressure (the contributor's work needs a free message number, 44
@@ -31,12 +31,15 @@ and tilt, and is the mouse everywhere else.
 - After the merge (328314f): kind 45; PenStrokes.swift's project IDs A045/F045 (AC01/FC01 are
   HardwareKeyboardPolicy.swift's since #80); the workspace file out; privacy.html's Pencil items between
   `<!-- Pencil` markers (release-checklist part 1 §3 cuts them before the release); sillclient.py's
-  `pencil=`; the touch rig compiling PenStrokes.swift and Pen.swift; the docs.
+  `pencil=`; the touch rig compiling PenStrokes.swift and Pen.swift; `clipboard`'s mutant pattern after
+  `pencil:` (Hunter's 5c39211 from #175, cherry-picked); the docs.
 - Verified (the plan's "Rebased onto main"): `swift build -c release` from `git archive`, only the
   CaptureProbe warning; the iOS app Debug and Release for the simulator and Debug for a device, only the
-  StreamClient capture warning; `SillHost --pen-selftest` 37 of 37, nothing posted; `run-all.sh`, all 46;
-  `pen` 197 and 5,000 sessions, 92 of 92 mutants; `compatibility` 157, 41 of 41; `pointer-control` 158,
-  33 of 33; `protocol` 193 + 8, 24 of 24; `menus` 43 of 43; `fence` 33 of 33; H4 against main's
+  StreamClient capture warning; `SillHost --pen-selftest` 37 of 37, nothing posted; `run-all.sh`, all 47
+  (on main at 4d990e9); `pen` 197 and 5,000 sessions, 92 of 92 mutants; `compatibility` 157, 41 of 41;
+  `pointer-control` 158, 33 of 33; `protocol` 193 + 8, 24 of 24; `menus` 43 of 43; `fence` 33 of 33;
+  `clipboard` 259 (its mutants not rerun to the end: 9 of 72 caught before a pause; #175 reports
+  72 of 72); H4 against main's
   CLI (idle identical; with a client identical but for when its stats seconds fell); H5 and S1 on
   loopback (this host: the pen's enter, tilt, pressure, drags, up and leave, a finger's tap as plain mouse
   events; main's host, and the app facing it: the mouse alone); the touch rig against main's surfaces, 72
