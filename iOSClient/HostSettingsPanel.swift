@@ -540,11 +540,8 @@ struct HostSettingsPanel: View {
                 .accessibilityLabel(ThumbnailHold.spokenTitle)
                 .accessibilityValue(ThumbnailHold.spokenValue(holdSeconds))
                 .accessibilityAdjustableAction { direction in
-                    switch direction {
-                    case .increment: holdStored = ThumbnailHold.adjusted(holdSeconds, up: true)
-                    case .decrement: holdStored = ThumbnailHold.adjusted(holdSeconds, up: false)
-                    @unknown default: break
-                    }
+                    if direction == .increment { holdStored = ThumbnailHold.adjusted(holdSeconds, up: true) }
+                    else if direction == .decrement { holdStored = ThumbnailHold.adjusted(holdSeconds, up: false) }
                 }
             }
         }
