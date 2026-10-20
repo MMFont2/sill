@@ -197,6 +197,15 @@ pixels or fewer, so nothing changes there.
     Aa". The App Store description's "Aa makes text larger or smaller" stays true. The site's new words are
     marked `<!-- Fit windows` for the release that ships them (docs/release-checklist.md part 1 §3).
 
+15. **An iPhone Duo on Sill 0.5.1 (4)**, before `fitsPanel`: open flat and upright with Aa unset, its pane
+    follows the picture's shape, and with a Mac that fits by default an app whose least width is over the
+    pane's (about 653 pt: Xcode, Music, Mail…) shrinks the pane step by step to its least height, until
+    the device updates. Default: accepted, since both apps ship together and the App Store updates the
+    device. Alternative, for the host: when an app takes more than the size asked on a side, ask once
+    more for the panel's shape at the larger of the two ratios, so the window keeps the panel's shape at
+    its least size (no loop on any device, and no black bars on any device either); a second resize per
+    fit, which no device needs once it reads `fitsPanel`.
+
 ## The test plan
 
 - **`Tests/checks/fit-policy`** (FitPolicy.swift alone; in CI's run and its mutants matrix): the fit at
@@ -234,3 +243,91 @@ pixels or fewer, so nothing changes there.
 - **Untested, for Noah**: below, in Results.
 
 ## Results
+
+All on 2026-10-20, on this Mac (macOS 27.0, M2 Pro, one 1512×982 Retina display), with Sill.app idle and
+its Virtual Display off, while other agents' builds kept the load average between 170 and 1,000.
+
+- **`Tests/checks/fit-policy`**: 147 cases of the rule and 5,000 model sessions, 293,631 checks in all,
+  pass. In the sessions: 110,309 asks (19,979 by default, 90,330 for Aa); 53,576 fits that moved the
+  window, 14,548 refused, 32,105 in full screen, 10,080 at an app's minimum; 50,548 asks not made again;
+  59,384 viewports sent again, none of which asked; the setting turned on with a window fitted now 3,286
+  times, turned off with one put back 2,387 times. **41 of 41 mutants** caught (the default's scale, the
+  setting, Aa's scale under the setting, the bounds, the reason, the rounding, the compare, a move, every
+  branch of the memory, of the setting's change and of `fitsPanel`, the lines).
+- **What the model found** while it was being written: the memory first remembered only an ask that left
+  the window where it was, so an app clamped to its minimum was asked once more at the next viewport (the
+  ask had moved it, to its minimum); it now remembers where an ask left a window short of the size asked
+  (`Asks.Short`), and the same viewport sent again never asks. A scale of 1e-300 gave a finite, absurd
+  size that the coordinator would have asked for (as main's code would): scales outside 0.25 to 4 and
+  sides past 16,384 pt are now none.
+- **`Tests/checks/window-restore`**: 42,514 checks pass (208 cases; the model's 5,000 sessions now fit
+  through FitPolicy: 2,240 fits by default, 2,384 asks not made again, the setting turned on with a window
+  fitted 512 times and off with one put back 128 times, every outcome of the way back as before).
+  **95 of 95 mutants** caught.
+- **`away-quality`** 78 cases (71 before), **`away-wire`** 56 (47), **`duo`** 252,566 (252,557): pass.
+- **Builds**: `swift build -c release`, only the known CaptureProbe warning; the iOS app, Debug for the
+  simulator exactly as CI builds it (`-derivedDataPath` in the worktree, `CODE_SIGNING_ALLOWED=NO
+  ARCHS=arm64`), Release for the simulator and Debug for a generic device, `** BUILD SUCCEEDED **` each,
+  only the known StreamClient capture warning.
+- **The restore probe** (`Scripts/restore-probe/run.sh`, the screen unlocked, Noah idle for 22 minutes):
+  34 of 34. The new steps: 15, a 900×600 window fitted up to a 1000×710 panel at 1× ("1× by default"),
+  "already there" for the same viewport again, then back to (20,73,900×600) whole; 16, fitted down to an
+  iPhone's 386×241 pane at 1×, back whole; 17, with the setting off nothing asked and nothing recorded,
+  Aa's 1.5× fitted to 667×473 all the same, back whole; 18, the setting turned off while the window
+  streams: `putBack`, back whole, and nothing fits it again; 19, a window that cannot be resized refused
+  once (AX error -25200), "not asked again" for the same viewport, refused again after a pick. The front
+  app never changed.
+- **`Tests/capture-fit`** (the screen unlocked; two virtual displays of its own, 1000×700 pt, each for a
+  few seconds): with origin/main's WindowCapture.swift, 2 of 10 cases fail: the window on the 1× display
+  at twice its points (Retina) and the window on the 2× display at four times its points, luma
+  [255, 255, 0, 255, 255, 0, 0, 0, 0]: white in the top-left quarter, black to the right and below. The
+  Desktop of the 1× display at Retina already filled its frame. With this branch's, 10 of 10. The
+  patterned window's frames, two runs of each build: at the window's own pixels (800×500 on the 1× display,
+  1600×1000 on the 2× one) byte for byte the same in all four runs; at half of them (400×250, 800×500) at
+  most 2 luma levels apart (mean 0.0023 and 0.0003), main against main as much as main against this
+  branch: `scalesToFit` changes only a source asked for more pixels than it has.
+- **Not verified here**: Sill.app with a device (no device was used, and none may be); a fit by default of
+  one of Noah's real windows (a synthetic host never fits, and the restore probe fits only its own
+  window); the coordinator's glue around FitPolicy live (`applyFitSetting`, `noteFitsPanel`, a pick's fresh
+  start: the check's model is a copy of it); the iPhone Duo's pane with `fitsPanel` (pure and checked,
+  one line of glue); a real 1× display (the capture check's is virtual).
+
+### Untested, for Noah (N1–N12)
+
+With Sill.app built from this branch and this iOS build, Virtual Display off unless a step says otherwise.
+Sill.log's lines are the way to tell what happened.
+
+- **N1, a small window on the iPad.** A Notes window of about 600×400 picked on the iPad fills the iPad's
+  picture from the start, Aa reading 1×; Sill.log: "Resized Notes to … pt (asked … for a … panel at 1×, by
+  default)". Aa to 1.25×, then back to 1×: each fits ("… at 1.25×)", "… at 1.0×)"). Pick another window:
+  "Restored Notes — … to (…)", and Notes is back at its size on the Mac. Disconnect, and Quit Sill: the
+  same.
+- **N2, the iPhone.** A Safari window across the display, picked on the iPhone held upright, is fitted
+  down to the 16:10 picture (377×235 pt on the 15 Pro); held sideways, to the landscape picture; with
+  Larger Picture on, to its room (377×340), so the picture reaches the keyboard's top without Aa.
+- **N3, the switch.** With a window streaming, Settings › Streaming's "Fit windows to the device’s screen"
+  off: the window goes back at once ("Restored …", one restart), and the device's picture follows; on:
+  fitted at once. The menu's "Fit Windows to the Device’s Screen" does the same, and the setting survives a
+  relaunch (`defaults read me.saffer.sill.mac fitWindows`); the log says "Settings: fit windows on → off".
+- **N4, a window that cannot be resized** (Calculator): one "… refused the size (AX error -25200); it
+  streams at its own size." per pick, and no more while it streams (move the Pencil over the picture, or
+  tap the trackpad, which makes the device send its viewport again).
+- **N5, full screen.** A window already in full screen when picked: "… is full screen; not resizing."
+  once, never the display's size; full screen and out again while it streams: fitted again, as with Aa.
+- **N6, a resize on the Mac.** Resize the streaming window on the Mac: back to the device's size within
+  about two seconds, as with Aa (open question 2: say whether the fit by default should keep the size you
+  gave it until the next pick or rotation).
+- **N7, a large least size** (Xcode, Music) on the iPhone held upright: the app's least size, black
+  around it, as with Aa (open question 15's rule would keep the picture's shape instead).
+- **N8, a 1× display.** A window on an external display at 1× streams across the whole frame at Retina
+  (before, in its top-left quarter), and taps land where they should; the Desktop of that display.
+- **N9, two devices.** The iPad and the iPhone connected: the window takes the size of the one that sent
+  its viewport last (as with Aa), and goes back when the last one leaves.
+- **N10, the iPhone Duo** (from October 23), open flat and upright, Aa unset, a window streaming: a 16:10
+  picture (the console's `viewport:` lines), which Xcode's least width does not shrink. With Sill 0.5.1 (4)
+  on the Duo instead, note what the picture does with Xcode (open question 15).
+- **N11, the virtual display on**: windows fit as before, whatever the switch; the switch turned off while
+  a window is staged changes nothing.
+- **N12, mixed builds and the CLI.** The iPad on Sill 0.5.1 (4) against this Sill.app: windows fit by
+  default (Aa reads 1×, as it always did). This iPad build against Sill for Mac 0.5.1: as before (no fit
+  until Aa). `SillHost --no-fit`: its line at launch, windows keep their size, Aa still fits.

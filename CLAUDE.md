@@ -8,6 +8,73 @@ Formerly winstream; the folder still carries the old name.
 
 ## Current step
 
+**A picked window fits the device by default (2026-10-20, branch `fit-by-default` from main at d1fa97e;
+issue #70 with closed PR #149; docs/fit-by-default-plan.md has the rule, the open questions with the
+default taken for each, and the results).** Noah: "Work on fit-by-default now that windows go back to their
+size" (PR #75's WindowRestore). In regular mode a window a device streams with Aa unset now takes the
+device's panel at 1×, as if Aa were set to 1×, while the Mac's Fit windows to the device's screen is on (the
+default), and goes back to its own frame when it stops streaming; before, Aa unset meant "leave the Mac
+window alone" while Aa read 1×. With it, #149's `scalesToFit`: a window on a 1× display at Retina filled
+only the frame's top-left quarter. Host, one optional host-to-device field and the iPhone Duo's pane rule;
+nothing a device sends changes.
+- The rule (`FitPolicy`, pure; `Tests/checks/fit-policy`): `fit(panel:scale:fitWindows:)`: Aa's scale
+  whatever the setting (`textScale`), with Aa unset 1× while the setting is on (`byDefault`), else none;
+  the panel ÷ the scale in whole points; scales outside 0.25–4 and sides past 16,384 pt none (any positive
+  scale before). `needsResize` (2 pt) and `moved` (1 pt), as `fitToViewport` had them. `Asks`: the last
+  fit that left its window short of the size asked (an app's minimum or grid, a window that cannot be
+  resized or is in full screen, an app that did not answer) is not asked again while the window is where
+  it left it, so a viewport re-sent when the pointer shows or hides asks nothing; the person resizing it,
+  full screen left, a late app, another size or window, a pick and the last device leaving ask again.
+  `afterSettingChange`: on, Aa unset: `fitNow`; off, Aa unset, a fit on record: `putBack`; Aa set:
+  nothing. `fitsPanel`. Lines: "Resized ‹app› to W×H pt (asked W×H for a W×H panel at 1×, by default)"
+  (Aa's as before), and `offLine` at launch while off.
+- Where: `fitToViewport` (a pick, every restart of the same window, every viewport, as Aa's always ran)
+  through `currentFit()` and `fitAsks`; `select` starts the memory afresh at a pick (`bringForward`);
+  `adopt` → `applyFitSetting` once no switch is in flight (select's defer comes back): `fitNow` through
+  `applyViewportToActiveWindow`, `putBack` through `restoreFits(keeping: nil)` and a catalog refresh, the
+  stream restarting at the window's new size; `start` prints `FitPolicy.offLine` while off;
+  `startPipeline` and `noteFitsPanel` keep the status stream's `fitsPanel`. `WindowSizer.resize`'s refusal
+  names the window ("Window sizing: ‹app› — ‹title› refused the size (AX error -25200); it streams at its
+  own size.").
+- The setting: `HostConfig.fitWindows` (on in `standard`; "fit windows on → off" in the Settings line;
+  the Mac's alone, absent from StreamSettings, HostSettingsChange, DeviceSettings.accepted, `applying`
+  and `restartNeeded`). Sill.app: Settings › Streaming's last section, "Fit windows to the device’s
+  screen", with its footnote; the status menu's "Fit Windows to the Device’s Screen" after Virtual Display
+  ("Picked windows take the device’s size while they stream"; absolute, as Virtual Display's); saved as
+  `fitWindows` (registered on, so an existing install fits from its next launch); `-SillSetAfter
+  fitWindows=0|1`. The CLI: `--no-fit`, one line at launch ("Fit windows to the device's screen is off: a
+  picked window keeps its size until the device sets one with Aa.").
+- Wire (additive; the floor below): kind 16's `stream.fitsPanel: Bool?` (RunningStream, host → device):
+  the Mac sizes the streamed window to the device's panel (Aa, the setting, the virtual display; true for
+  an app that refuses the size too: the Mac keeps asking), false for the Desktop and a window left alone,
+  nil from a host before it. Device: `DuoPosture.fitsWindowToPane(window:textScale:onVirtualDisplay:macFitsPanel:)`
+  (DuoPostureReader's `duoPaneAspect`): the iPhone Duo open flat and upright keeps its 16:10 pane while
+  the Mac fits a window with Aa unset, so an app's least width cannot shrink the pane step by step (the
+  loop the Duo's plan guarded against with Aa set). Aa reads 1× from the start as before, now true; no
+  other device file changed.
+- #149 (`WindowCapture.start`: `config.scalesToFit = true`, credited): `Tests/capture-fit` (TEST ONLY;
+  #149's test extended: the real WindowCapture on a 1× and a 2× virtual display of its own, with Sill's
+  virtual display's identity, one white window of its own on each). Main's: a window asked for twice its
+  pixels (Retina on the 1× display, four times its points on the 2× one) filled the frame's top-left
+  quarter; the Desktop of a 1× display already filled its frame. This branch's: all ten cases fill it. At
+  a window's own pixels the frames are byte for byte main's; at half (Standard on a Retina display) they
+  differ by at most 2 luma levels in a few pixels, as two runs of one build do (`compare.py`).
+- Defaults taken (the plan's 14): the fit wherever Aa's applies (a pick, restarts, a rotation); a resize
+  on the Mac while it streams fitted again at the next look, as with Aa; the switch in Settings ›
+  Streaming and the menu; none on the device; a change at once; Aa reads 1× as before; the Duo's pane by
+  `fitsPanel`; repeated asks remembered; malformed scales and sides left alone; `--no-fit` with one line;
+  the default's line "by default", the refusal named; #149 for every capture; `fitsPanel` true for an app
+  that refuses; the site's new words marked `<!-- Fit windows` (a block that changed words holds the old
+  ones; docs/release-checklist.md part 1 §3 has both perl lines), README, DEVELOPMENT.md and the next
+  What's New (its first paragraph, and Larger Picture's sentence without "Set a window's text size with Aa").
+- Known: an iPhone Duo with Sill 0.5.1 (4) (no `fitsPanel`), open flat and upright with Aa unset, follows
+  the picture's shape while a Mac with this change fits the window, so for an app whose least width is
+  over the pane's the pane shrinks step by step to the app's least height until the device updates (both
+  apps ship together; the plan's open question 15 has a host-side rule for it).
+- Verified: VERIFIED
+- **Untested, for Noah** (the plan's N1–N12, with Sill.app from this branch and this iOS build, Virtual
+  Display off): UNTESTED
+
 **The clipboard both ways (2026-10-14, branch `clipboard` from main at 985a733; issue #64; PR #78;
 the plan, its open questions with the default taken for each, the results and the review's fixes are
 in `docs/clipboard-plan.md`).** Noah: work on the clipboard (after #67/#68, #69, #59, #57, #58), text
