@@ -34,7 +34,8 @@ final class ExtendedScreen {
     }
 
     static let serialNum: UInt32 = 2
-    static let minSize = CGSize(width: 640, height: 480)
+    static let minLongSide: CGFloat = 800
+    static let minShortSide: CGFloat = 600
     static let maxSide: CGFloat = 4096   // VirtualDisplay's 8192 px at 2×
 
     /// The display in global points while it exists (input and the pointer land there).
@@ -45,13 +46,21 @@ final class ExtendedScreen {
     }
 
     /// The display's size for a device's panel, in Mac points: the panel divided by its text scale
-    /// (Aa; none counts as 1×), so the Mac's text shows on the device at about the size the scale
-    /// asks, within 640×480 and 4096 on a side. No viewport yet: 1280×800. Pure.
+    /// (Aa; none counts as 1×), grown evenly, keeping the panel's shape, until its long side is at
+    /// least 800 and its short side at least 600, and shrunk evenly to 4096 on a side at most. An
+    /// iPhone's panel is small (852×393 sideways on a 15 Pro): taken as it is, the Mac would get a
+    /// screen too short for a window and its menu bar, so the phone shows a roomier screen, smaller
+    /// (1301×600 there, its text at about half size; Aa scales it on from there). An iPad's panel
+    /// needs no growing (1133×744 on an iPad mini). No viewport yet: 1280×800. Pure.
     static func size(for v: Viewport?) -> CGSize {
         guard let v, v.width > 0, v.height > 0 else { return CGSize(width: 1280, height: 800) }
         let s = (v.scale ?? 1) > 0 ? (v.scale ?? 1) : 1
-        let w = (v.width / s).rounded(), h = (v.height / s).rounded()
-        return CGSize(width: min(max(w, minSize.width), maxSide), height: min(max(h, minSize.height), maxSide))
+        var w = v.width / s, h = v.height / s
+        let grow = max(1, minLongSide / max(w, h), minShortSide / min(w, h))
+        w *= grow; h *= grow
+        let shrink = min(1, maxSide / max(w, h))
+        w *= shrink; h *= shrink
+        return CGSize(width: max(320, w.rounded()), height: max(240, h.rounded()))
     }
 
     /// Whether the display is up at this size and rate already.

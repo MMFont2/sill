@@ -11,8 +11,9 @@ Formerly winstream; the folder still carries the old name.
 **The extended display (2026-10-24, branch `fix/keep-window-shape` in the MonoManiacTwo fork).**
 A device can use the Mac as a second screen: the Apps drawer's Displays row, Extended Display, asks
 for one (kind 33, device → host, empty), and the host makes a `CGVirtualDisplay` "Sill Extended"
-(`ExtendedScreen`) at the device's panel ÷ its Aa scale in Mac points (640×480 to 4096 a side;
-1280×800 before any viewport), HiDPI, at the stream's rate, and streams it whole as the Desktop
+(`ExtendedScreen`) at the device's panel ÷ its Aa scale in Mac points, grown evenly to at least
+800 on its long side and 600 on its short one (an iPhone sideways, 852×393: 1301×600) and at most
+4096 a side, keeping the panel's shape (1280×800 before any viewport), HiDPI, at the stream's rate, and streams it whole as the Desktop
 source (`active` stays `.desktop`, `WindowList.extended` true; an older device sees the Desktop).
 The person drags windows onto it on the Mac or with the device's pointer; any kind 6 (the Desktop
 button included), the last device leaving, a failure or Quit removes it, and macOS moves its
