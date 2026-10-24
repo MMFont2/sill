@@ -95,6 +95,10 @@ final class VirtualStage {
     /// The rectangle that size was asked as (global points): fitted into the display's usable
     /// area, which the Dock changes while the request stays the same. See `prepare` step (6).
     private var askedDest: CGRect?
+    /// A request the staged window could not take at the panel's shape, and the larger size of that
+    /// shape it was asked again (`keepingShape`), so a restart with the same request goes straight
+    /// to the larger size instead of squashing the window and growing it back each time.
+    private var shapeKept: (asked: CGSize, grown: CGSize)?
     /// The staged window is in a full-screen Space on the display (a video made full screen): it
     /// fills the display and refuses moves and sizes, so the display is captured as it is.
     private(set) var fullScreen = false
@@ -210,6 +214,21 @@ final class VirtualStage {
         guard let v, v.width > 0, v.height > 0 else { return clamp(windowSize) }
         let side = ceil(max(v.width, v.height) / 0.5)
         return clamp(CGSize(width: side, height: side))
+    }
+
+    /// The size to ask again when an app took a size other than `asked` because of its own minimum
+    /// on one side only: `asked` grown just enough, both ways alike, to meet the minimum it showed,
+    /// so the window keeps the panel's shape. DaVinci Resolve asked 935×567 took 1345×760 (its
+    /// minimum width, and the height asked down to its minimum height), a band 1.77:1 for a 1.65:1
+    /// panel that the device then letterboxed small, with Resolve's panels squashed into 760 pt;
+    /// asked again at 1345×816 it fills the panel. Nil when the app took the size (within 1 %), took
+    /// less (a size clamped to the display), or kept the shape anyway.
+    static func keepingShape(asked: CGSize, took: CGSize) -> CGSize? {
+        guard asked.width > 0, asked.height > 0 else { return nil }
+        let fx = took.width / asked.width, fy = took.height / asked.height
+        let f = max(fx, fy)
+        guard f > 1.01, abs(fx - fy) > 0.02 * f else { return nil }
+        return CGSize(width: (asked.width * f).rounded(.up), height: (asked.height * f).rounded(.up))
     }
 
     static func clamp(_ s: CGSize) -> CGSize {
@@ -368,16 +387,21 @@ final class VirtualStage {
             guard WindowSizer.liveBounds(of: p.windowID) != nil else { releaseWindow(); throw Failure.windowMissing }
         }
 
-        // (6) Place the window; grow the display once if the app enforces a larger minimum.
+        // (6) Place the window; ask once more at the panel's shape if the app's minimum bent it, and
+        // grow the display once if the app enforces a larger minimum than the display holds.
         var live = CGRect.zero
         var displayBounds = CGRect.zero
         var dest = CGRect.zero
-        for attempt in 0..<2 {
+        var ask = wanted
+        if let k = shapeKept, Self.sameSize(k.asked, wanted) { ask = k.grown } else { shapeKept = nil }
+        var reshaped = false
+        var grewDisplay = false
+        for attempt in 0..<3 {
             guard let d = display else { releaseWindow(); throw Failure.neverOnline }
             displayBounds = CGDisplayBounds(d.displayID)
             let usable = Self.usableArea(of: d.displayID) ?? displayBounds.divided(atDistance: menuInset, from: .minYEdge).remainder
             dest = CGRect(origin: usable.origin,
-                          size: CGSize(width: min(wanted.width, usable.width), height: min(wanted.height, usable.height)))
+                          size: CGSize(width: min(ask.width, usable.width), height: min(ask.height, usable.height)))
             let before = WindowSizer.liveBounds(of: p.windowID)
             // Where the last placement left the window, if it asked for this same rectangle. An app
             // that clamps (System Settings' fixed width, a minimum) never reaches `dest`, so a restart
@@ -442,8 +466,30 @@ final class VirtualStage {
                 print("Moved \(p.appName) — \(p.title) from \(before.map(Self.fmt) ?? "(unlisted)") to \(Self.fmt(live)) in \(Self.ms(since: t0)) ms (asked \(Self.fmt(dest)))"
                       + (settled ? "" : "; not settled by the deadline"))
             }
+            if !reshaped, let grown = Self.keepingShape(asked: dest.size, took: live.size) {
+                // The app's minimum bent the window out of the panel's shape (one side at its
+                // minimum, the other as asked): ask again at that shape, just large enough.
+                reshaped = true
+                shapeKept = (wanted, grown)
+                ask = grown
+                print("\(p.appName) took \(Int(live.width))×\(Int(live.height)) pt for \(Int(dest.width))×\(Int(dest.height)); asking \(Int(grown.width))×\(Int(grown.height)) to keep the panel's shape.")
+                if grown.width > usable.width + 2 || grown.height > usable.height + 2, !grewDisplay {
+                    grewDisplay = true
+                    do {
+                        try await ensureDisplay(atLeast: grown)
+                    } catch {
+                        releaseWindow()
+                        throw error
+                    }
+                    placement = p
+                    EmergencySnapshot.set((p.element, p.originalFrame))
+                    catalog.stagedWindowID = p.windowID
+                }
+                continue
+            }
             let oversized = live.width > usable.width + 2 || live.height > usable.height + 2
-            if oversized, attempt == 0 {
+            if oversized, !grewDisplay {
+                grewDisplay = true
                 // The app took a bigger size than asked (its minimum). Grow the display to it once;
                 // the window lands on a real display for a moment while the display is recreated.
                 print("\(p.appName) insists on \(Int(live.width))×\(Int(live.height)) pt (asked \(Int(wanted.width))×\(Int(wanted.height))); growing the virtual display.")
@@ -671,6 +717,7 @@ final class VirtualStage {
         placedSize = nil
         askedSize = nil
         askedDest = nil
+        shapeKept = nil
         captureRect = .zero
         catalog.stagedWindowID = nil
         EmergencySnapshot.set(nil)

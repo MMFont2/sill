@@ -1115,11 +1115,27 @@ package final class StreamCoordinator {
     /// (`restoreFits`, issue #57). None once the host is shutting down: nothing would put it back.
     private func fitToViewport(_ window: SCWindow) -> CGSize? {
         guard !shuttingDown, let v = viewport, let textScale = v.scale, textScale > 0, v.width > 0, v.height > 0 else { return nil }
-        let target = CGSize(width: (v.width / textScale).rounded(), height: (v.height / textScale).rounded())
+        let asked = CGSize(width: (v.width / textScale).rounded(), height: (v.height / textScale).rounded())
+        // A request this window already could not take at the panel's shape goes straight to the
+        // larger size it took then (below), so a re-sent viewport never squashes it and grows it back.
+        var target = asked
+        if let k = shapeKept[window.windowID], abs(k.asked.width - asked.width) <= 2, abs(k.asked.height - asked.height) <= 2 {
+            target = k.grown
+        }
         let current = Self.liveBounds(of: window.windowID)?.size ?? window.frame.size
         if abs(current.width - target.width) <= 2, abs(current.height - target.height) <= 2 { return nil }
-        guard let fit = sizer.resize(window: window, to: target) else { return nil }
+        guard var fit = sizer.resize(window: window, to: target) else { return nil }
         fits.fitted(window.windowID, handle: fit.placement, before: fit.before, after: fit.after, asked: target)
+        // An app whose minimum bent the window out of the panel's shape (DaVinci Resolve: its
+        // minimum width, the height as asked) is asked once more at that shape, just large enough,
+        // so the device shows it filling the panel instead of a squashed band.
+        if let grown = VirtualStage.keepingShape(asked: target, took: fit.after.size),
+           let again = sizer.resize(window: window, to: grown) {
+            fits.fitted(window.windowID, handle: again.placement, before: again.before, after: again.after, asked: grown)
+            shapeKept[window.windowID] = (asked, grown)
+            fit = again
+            target = grown
+        }
         let actual = fit.after.size
         // Asked again for a size the app already refused (its minimum): nothing moved.
         guard abs(actual.width - current.width) >= 1 || abs(actual.height - current.height) >= 1 else { return nil }
@@ -1128,6 +1144,11 @@ package final class StreamCoordinator {
               + "(asked \(Int(target.width))×\(Int(target.height)) for a \(Int(v.width))×\(Int(v.height)) panel at \(textScale)×)")
         return actual
     }
+
+    /// Per window, a request it could not take at the panel's shape and the larger size of that
+    /// shape it took instead (`fitToViewport`). Forgotten with the host; window IDs are not reused
+    /// within a session of the window server.
+    private var shapeKept: [CGWindowID: (asked: CGSize, grown: CGSize)] = [:]
 
     /// A new viewport while a window streams. The encoder is fixed to the old size, but the
     /// catalog's resize check (`windowsChanged`) already restarts the pipeline when the window's
