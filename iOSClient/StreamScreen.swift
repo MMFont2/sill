@@ -1280,7 +1280,7 @@ private struct TopBar: View {
                 .allowsHitTesting(!scaleOpen)
                 .tourTarget(.keyboard)
 
-            button(open: client.active == .desktop, symbol: "desktopcomputer", label: "Desktop",
+            button(open: client.active == .desktop && !client.extendedActive, symbol: "desktopcomputer", label: "Desktop",
                    accessibilityLabel: "Show the full Mac desktop",
                    action: { client.select(.desktop) })
                 .opacity(scaleOpen ? 0 : 1)
@@ -1924,8 +1924,22 @@ struct AppDrawer: View {
             searchField
             ScrollView {
                 VStack(spacing: 6) {
+                    if offersExtended {
+                        header("Displays")
+                        DrawerRow(height: 50, highlighted: client.extendedActive,
+                                  title: "Extended Display",
+                                  trailing: client.extendedActive ? "Showing" : nil,
+                                  action: showExtended) {
+                            Image(systemName: "rectangle.on.rectangle")
+                                .font(.system(size: 17, weight: .medium))
+                                .foregroundStyle(Palette.text)
+                                .frame(width: 32, height: 32)
+                                .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Palette.control))
+                        }
+                        .accessibilityHint("A second screen of \(client.macName.isEmpty ? "the Mac" : client.macName) at this device's size. Drag windows onto it on the Mac.")
+                    }
                     if !openApps.isEmpty {
-                        header("Open now")
+                        header("Open now").padding(.top, offersExtended ? 2 : 0)
                         ForEach(openApps) { app in
                             DrawerRow(height: 50,
                                       highlighted: app.bundleID == activeBundleID,
@@ -2039,6 +2053,16 @@ struct AppDrawer: View {
     private func matches(_ name: String) -> Bool {
         let query = search.trimmingCharacters(in: .whitespaces)
         return query.isEmpty || name.range(of: query, options: .caseInsensitive) != nil
+    }
+
+    /// The extended display's row: while the Mac makes one and no search narrows the list.
+    private var offersExtended: Bool {
+        (client.hostExtendedDisplay ?? 0) >= 1 && search.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    private func showExtended() {
+        client.selectExtendedDisplay()
+        withAnimation(.easeOut(duration: 0.18)) { drawerOpen = false }
     }
 
     /// First window of the app, or the next one if this app is already showing.

@@ -75,6 +75,10 @@ public enum StreamMessageKind: UInt8 {
                              // on), its text becomes the Mac's clipboard, and `stop` ends the subscription; only
                              // to a host whose window list says `clipboard` 1 or more. Host → device: text copied
                              // on the Mac (or sent by another device), only to a connection that subscribed
+    case extendedDisplay = 33 // device → host, empty payload: stream an extended display of this Mac, a second
+                              // screen at the device's size beside the Mac's own, which the person drags windows
+                              // onto; only to a host whose window list says `extendedDisplay` 1. Any kind 6 leaves
+                              // it (the display goes, and macOS moves its windows back to the Mac's screens).
     case unknown = 255       // never sent: what parseHeader yields for a kind this build does not know
 }
 

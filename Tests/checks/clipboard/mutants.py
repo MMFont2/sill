@@ -7,7 +7,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 P = "ClipboardPolicy.swift"
 MUTANTS = [
     # The wire.
-    ("kind 32 as 33", "StreamMessage.swift", "case clipboard = 32", "case clipboard = 33"),
+    ("kind 32 as 34", "StreamMessage.swift", "case clipboard = 32", "case clipboard = 34"),
     ("the list's clipboard never stored", "Switcher.swift", "self.clipboard = clipboard\n", "self.clipboard = nil\n"),
     ("clipboard 1 by default", "Switcher.swift", "gestures: Int? = nil, clipboard: Int? = nil) {", "gestures: Int? = nil, clipboard: Int? = 1) {"),
     ("stop false by default (a subscription is no longer {})", "Clipboard.swift", "image: Data? = nil, stop: Bool? = nil) {", "image: Data? = nil, stop: Bool? = false) {"),

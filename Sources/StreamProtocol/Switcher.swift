@@ -60,12 +60,21 @@ public struct WindowList: Codable {
     /// pull request #66's `Bool` (never released) does not decode here and becomes an Int as it
     /// rebases.
     public var clipboard: Int?
+    /// Whether this host makes an extended display (kind 33): 1 when it can, a second screen of the
+    /// Mac at the device's size. Nil from every host before 2026-10-24, and from one that cannot (the
+    /// CLI without --virtual-display, which runs no AppKit loop; a synthetic host): a device sends no
+    /// kind 33 to either.
+    public var extendedDisplay: Int?
+    /// True while the source is the extended display. `active` then says `.desktop`, which is what an
+    /// older device shows for it (StreamSource keeps its three cases); nil otherwise.
+    public var extended: Bool?
 
     public init(macName: String, windows: [WindowInfo], active: StreamSource, launchID: String? = nil,
-                hostVersion: String? = nil, protocol: Int? = nil, gestures: Int? = nil, clipboard: Int? = nil) {
+                hostVersion: String? = nil, protocol: Int? = nil, gestures: Int? = nil, clipboard: Int? = nil,
+                extendedDisplay: Int? = nil, extended: Bool? = nil) {
         self.macName = macName; self.windows = windows; self.active = active; self.launchID = launchID
         self.hostVersion = hostVersion; self.protocol = `protocol`; self.gestures = gestures
-        self.clipboard = clipboard
+        self.clipboard = clipboard; self.extendedDisplay = extendedDisplay; self.extended = extended
     }
 }
 

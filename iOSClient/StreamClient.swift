@@ -783,6 +783,11 @@ final class StreamClient: ObservableObject {
     /// six, nil from a Mac before 2026-09-27, which is sent none (`sendGesture`). Cleared with the
     /// session.
     @Published var hostGestures: Int?
+    /// The extended display (kind 33): whether this session's Mac makes one (`WindowList.extendedDisplay`,
+    /// 1; nil from a Mac before it, which is sent no kind 33) and whether it is what streams now
+    /// (`WindowList.extended`; `active` then says `.desktop`). Cleared with the session.
+    @Published var hostExtendedDisplay: Int?
+    @Published var extendedActive = false
     /// The clipboard (kind 32, StreamClient+Clipboard, docs/clipboard-plan.md): what this session's
     /// Mac takes and sends (`WindowList.clipboard`, 1 for text), nil from a Mac before it or with Share
     /// clipboard with devices off. Cleared with the session.
@@ -3119,6 +3124,8 @@ final class StreamClient: ObservableObject {
         hostVersion = nil
         hostProtocol = nil
         hostGestures = nil
+        hostExtendedDisplay = nil
+        extendedActive = false
         remoteRoute = nil
         macInfo = nil
         macInfoSaved = false
@@ -3187,7 +3194,21 @@ final class StreamClient: ObservableObject {
         send(.selectSource, Wire.encode(source))
         #if DEBUG
         // Layout harness (mock, no connection): show the pick locally so taps can be checked.
-        if connection == nil { DispatchQueue.main.async { self.active = source } }
+        if connection == nil { DispatchQueue.main.async { self.active = source; self.extendedActive = false } }
+        #endif
+    }
+
+    /// The person's pick of the extended display (the Apps drawer's row): the Mac makes a second
+    /// screen at this device's size and streams it; any other pick leaves it. Only to a Mac that
+    /// makes one (`hostExtendedDisplay`).
+    func selectExtendedDisplay() {
+        guard (hostExtendedDisplay ?? 0) >= 1 || connection == nil else { return }
+        noteAction()
+        choicesSent += 1
+        send(.extendedDisplay, Data())
+        #if DEBUG
+        // Layout harness (mock, no connection): show the pick locally, as `request` does.
+        if connection == nil { DispatchQueue.main.async { self.active = .desktop; self.extendedActive = true } }
         #endif
     }
 
@@ -3631,6 +3652,9 @@ final class StreamClient: ObservableObject {
                 if self.hostVersion != list.hostVersion { self.hostVersion = list.hostVersion }
                 if self.hostProtocol != list.protocol { self.hostProtocol = list.protocol }
                 if self.hostGestures != list.gestures { self.hostGestures = list.gestures }
+                if self.hostExtendedDisplay != list.extendedDisplay { self.hostExtendedDisplay = list.extendedDisplay }
+                let extendedNow = list.extended == true && list.active == .desktop
+                if self.extendedActive != extendedNow { self.extendedActive = extendedNow }
                 // The clipboard: subscribe (or stop) as the Mac's word and this device's switch say.
                 self.hostClipboardChanged(list.clipboard)
                 if !self.sessionListed {

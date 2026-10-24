@@ -70,6 +70,14 @@ package final class StreamCoordinator {
     /// The virtual display needs that loop too: without it the setting is forced off.
     private let appKitLoop: Bool
     let stage: VirtualStage
+    /// The extended display (kind 33, ExtendedScreen): a second screen of the Mac at the device's
+    /// size, streamed as the Desktop source. `extendedWanted` is the last pick's (kind 33 sets it,
+    /// any kind 6 clears it), `extendedActive` whether the running Desktop stream is it.
+    private let extended = ExtendedScreen()
+    private var extendedWanted = false
+    private var extendedActive = false
+    /// This host can make one: under the AppKit loop (VirtualDisplay.swift), never on a synthetic host.
+    private var extendedOffered: Bool { appKitLoop && !synthetic }
     /// What the menu bar app shows. Written here, at the moment things happen; never read back.
     package let status: HostStatus
     /// Set by the signal handler: a select in flight when Ctrl-C lands must not stage anything new.
@@ -338,8 +346,9 @@ package final class StreamCoordinator {
         // The identity's TXT record (its tag, and `p` on a TLS home door) must be in the first
         // registration: set before `server.start()`.
         remote?.attach(server: server, status: status, macName: macName, requirePairing: config.requirePairing)
-        catalog.preferMainDisplay = virtualDisplay   // the Desktop source must never capture the virtual display
+        catalog.preferMainDisplay = virtualDisplay || extendedOffered   // the Desktop source must never capture a virtual display
         stage.onLost = { [weak self] in Task { @MainActor in await self?.stageLost() } }
+        extended.onLost = { [weak self] in Task { @MainActor in await self?.extendedLost() } }
         status.update { $0.synthetic = synthetic; $0.virtualDisplayOn = config.virtualDisplay }
         // Every change of the snapshot re-publishes the devices' settings state (deduplicated, so
         // the once-a-second stats send nothing). One before `server.start()` reaches nobody, and
@@ -761,7 +770,7 @@ package final class StreamCoordinator {
             || old.requirePairing != next.requirePairing {
             remote?.apply(next)
         }
-        catalog.preferMainDisplay = next.virtualDisplay   // the Desktop source must never capture the virtual display
+        catalog.preferMainDisplay = next.virtualDisplay || extendedOffered   // the Desktop source must never capture a virtual display
         if old.virtualDisplay && !next.virtualDisplay {
             stage.release()        // idempotent: select has already sent a staged window home
             status.update { $0.lastStageFailure = nil }
@@ -881,9 +890,17 @@ package final class StreamCoordinator {
             // A window picked comes forward on the Mac, which closes a view a gesture opened; the
             // Desktop picked (as a device does before a gesture made over a window) leaves it.
             if case .window = source { gestureChords.forget() }
+            // Any pick but kind 33 leaves the extended display (the Desktop button means the Mac's own).
+            extendedWanted = false
             // A pick from the device's switcher: the device never selects a window by itself (its
             // automatic requests are for the Desktop only).
             await handlePick(source)
+        case .extendedDisplay:
+            guard extendedOffered else { return }
+            gestureChords.forget()
+            print("Extended display asked for by \(deviceName(connection))")
+            extendedWanted = true
+            await handlePick(.desktop)
         case .windowCommand:
             // The bar's long-press menu: the window's own traffic lights, pressed through
             // Accessibility. The staged window's element is already matched; others are looked up.
@@ -1053,6 +1070,7 @@ package final class StreamCoordinator {
             // The test pattern with the TEST ONLY scripted pointer: its own space, where a test
             // client's input moves that pointer (a synthetic host posts nothing).
             if synthetic, pointer.hasTestPointer { return Self.testPatternRect }
+            if extendedActive { return extended.frame }
             return catalog.display?.frame
         case .window(let id):
             // On the virtual display the video is the captured crop, not the whole window: an app
@@ -1096,6 +1114,7 @@ package final class StreamCoordinator {
             return nil
         case .desktop:
             if synthetic { return pointer.hasTestPointer ? .rect(Self.testPatternRect) : nil }
+            if extendedActive { return extended.frame.map { .rect($0) } }
             return catalog.display.map { .rect($0.frame) }
         case .window(let id):
             guard !synthetic else { return nil }
@@ -1158,6 +1177,11 @@ package final class StreamCoordinator {
         // A different rate (a ProMotion device joined, Low Power Mode toggled) needs a new capture
         // interval and encoder session: one restart, whatever the source.
         if active != .none, effectiveFPS != fps { await select(active); return }
+        // The extended display follows the panel: a new size (a rotation, Aa) makes it again at that size.
+        if active == .desktop, extendedActive {
+            if !extended.matches(size: ExtendedScreen.size(for: viewport), refreshHz: fps) { await select(.desktop) }
+            return
+        }
         if virtualDisplay, stage.isStaged, case .window(let id) = active {
             // One restart: prepare re-places the window on the same display (the display is only
             // recreated if the envelope grew). The client's identical re-send after a switch is a
@@ -1337,6 +1361,24 @@ package final class StreamCoordinator {
         // frame (WindowRestore, issue #57): another window or the Desktop picked, `.none` when the
         // last device leaves or the stream stops. A restart of the same window keeps it fitted.
         if case .window(let next) = source { restoreFits(keeping: next) } else { restoreFits(keeping: nil) }
+        // The extended display streams only while it is the pick; any other source removes it, and
+        // macOS moves its windows back to the Mac's screens.
+        let toExtended = source == .desktop && extendedWanted && extendedOffered && !shuttingDown
+        var extendedReady = false
+        if toExtended {
+            do {
+                try await extended.prepare(size: ExtendedScreen.size(for: viewport), refreshHz: fps)
+                extendedReady = !shuttingDown
+            } catch {
+                // The Mac's own screen streams instead (the Desktop branch below), and the device hears so.
+                print("Extended display could not be made (\(error)); streaming the Mac's own screen instead.")
+                extendedWanted = false
+            }
+        }
+        if !extendedReady {
+            if extended.display != nil { extended.release() }
+            extendedActive = false
+        }
 
         var filter: SCContentFilter?     // nil only for the synthetic test pattern
         var sourceRect: CGRect? = nil    // set only when the window streams from the virtual display
@@ -1415,6 +1457,15 @@ package final class StreamCoordinator {
                 width = evenPixels(1512 * captureScale); height = evenPixels(949 * captureScale)
                 describe = "a synthetic test pattern\(useSoftwareEncoder ? " (software encoder)" : "")"
                 title = "Test Pattern"; kind = .testPattern
+            } else if extendedReady, let d = extended.scDisplay, let frame = extended.frame {
+                var own = catalog.ownApplication
+                if own == nil { own = await catalog.resolveOwnApplication() }
+                filter = own.map { SCContentFilter(display: d, excludingApplications: [$0], exceptingWindows: []) }
+                    ?? SCContentFilter(display: d, excludingWindows: [])
+                width = evenPixels(frame.width * captureScale); height = evenPixels(frame.height * captureScale)
+                describe = "the extended display (\(Int(frame.width))×\(Int(frame.height)) pt)\(useSoftwareEncoder ? " (software encoder)" : "")"
+                title = "Extended Display"; kind = .desktop
+                extendedActive = true
             } else {
                 guard let d = catalog.display else { active = .none; broadcastList(); return }
                 // Sill's own windows (Settings, Log, the pairing window with its code) never go out
@@ -1891,6 +1942,14 @@ package final class StreamCoordinator {
     /// The window server removed the virtual display (sleep/wake, display arbitration). The stage
     /// has already put the window back; stage it again, or after repeated losses give up on the
     /// virtual display for this run and stream the real window.
+    /// The window server took the extended display away by itself: the Mac's own screen streams instead.
+    private func extendedLost() async {
+        guard extendedActive else { return }
+        extendedWanted = false
+        extendedActive = false
+        if active == .desktop { await select(.desktop) }
+    }
+
     private func stageLost() async {
         stageLosses += 1
         print("The system removed the virtual display; the window is back on a real display.")
@@ -1915,6 +1974,7 @@ package final class StreamCoordinator {
         shuttingDown = true
         restoreFits(keeping: nil)
         stage.release()
+        extended.release()
     }
 
     /// The CLI's default path at a signal (HostShutdown.installKeyRelease), just before it dies of it:
@@ -2343,7 +2403,9 @@ package final class StreamCoordinator {
         StreamMessage(kind: .windowList, timestamp: Date().timeIntervalSince1970, isKeyframe: false,
                       payload: Wire.encode(WindowList(macName: macName, windows: catalog.infos, active: active, launchID: launchID,
                                                       hostVersion: hostVersion, protocol: SillProtocol.current,
-                                                      gestures: TrackpadGesture.generation, clipboard: clipboard.advertised)))
+                                                      gestures: TrackpadGesture.generation, clipboard: clipboard.advertised,
+                                                      extendedDisplay: extendedOffered ? 1 : nil,
+                                                      extended: extendedActive && active == .desktop ? true : nil)))
     }
 
     private func broadcastList() { server.broadcast(listMessage()) }

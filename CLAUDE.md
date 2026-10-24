@@ -8,6 +8,28 @@ Formerly winstream; the folder still carries the old name.
 
 ## Current step
 
+**The extended display (2026-10-24, branch `fix/keep-window-shape` in the MonoManiacTwo fork).**
+A device can use the Mac as a second screen: the Apps drawer's Displays row, Extended Display, asks
+for one (kind 33, device → host, empty), and the host makes a `CGVirtualDisplay` "Sill Extended"
+(`ExtendedScreen`) at the device's panel ÷ its Aa scale in Mac points (640×480 to 4096 a side;
+1280×800 before any viewport), HiDPI, at the stream's rate, and streams it whole as the Desktop
+source (`active` stays `.desktop`, `WindowList.extended` true; an older device sees the Desktop).
+The person drags windows onto it on the Mac or with the device's pointer; any kind 6 (the Desktop
+button included), the last device leaving, a failure or Quit removes it, and macOS moves its
+windows back. A new panel size (a rotation, Aa) makes it again at that size, which sends its
+windows to the Mac's screens for that moment. Offered only under the AppKit loop and never on a
+synthetic host (`WindowList.extendedDisplay` 1, nil otherwise); written from scratch on Sill's own
+VirtualDisplay wrapper, nothing taken from OpenDisplay (GPL-3.0). Same vendor as the stage (Sill's
+windows never open there), serial 2, so macOS keeps where the person arranged it in System Settings
+› Displays; Sill never moves it. `catalog.preferMainDisplay` is on whenever it is offered, so the
+Desktop is always the main display. Its own Settings group, a pointer keep-alive across a move
+(`resumeSource` asks for the main Desktop) and the iPhone's portrait row are not done.
+- Verified: `swift build -c release`, the iOS app for the simulator, `Tests/checks/run-all.sh`; a
+  synthetic host neither offers it nor answers kind 33 (`sillclient.py --extended@T`), the stream
+  unchanged. **Untested, for Noah:** the display itself (Sill.app, an iPad): the drawer's row, the
+  display beside the Mac's screen in System Settings › Displays, a window dragged onto it showing
+  on the iPad, input and the pointer there, a rotation, the Desktop button bringing the windows back.
+
 **The clipboard both ways (2026-10-14, branch `clipboard` from main at 985a733; issue #64; PR #78;
 the plan, its open questions with the default taken for each, the results and the review's fixes are
 in `docs/clipboard-plan.md`).** Noah: work on the clipboard (after #67/#68, #69, #59, #57, #58), text

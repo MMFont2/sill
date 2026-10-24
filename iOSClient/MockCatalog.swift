@@ -401,6 +401,8 @@ enum MockCatalog {
         client.hostGestures = c == .legacy ? nil : TrackpadGesture.generation
         // …and shares its clipboard (`WindowList.clipboard` 1): the Settings panel's Share Clipboard.
         client.hostClipboard = c == .legacy ? nil : ClipboardPolicy.generation
+        // …and makes an extended display (`WindowList.extendedDisplay` 1): the Apps drawer's Displays row.
+        client.hostExtendedDisplay = c == .legacy ? nil : 1
         guard c != .legacy else { return }
         var state = HostSettingsState(
             settings: StreamSettings(maxFPS: 120, bitrate: 15_000_000, captureScale: 2, prioritizeSpeed: false, virtualDisplay: false,
