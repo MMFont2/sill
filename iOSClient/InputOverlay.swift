@@ -550,11 +550,11 @@ final class InputOverlayView: UIView, UIKeyInput, UIGestureRecognizerDelegate {
             sendLatched(usage)
             return
         }
-        // The key row's shift latched, then a return or tab from the text system (the software
-        // keyboard's, or a hardware one's without shift): ⇧Return and ⇧Tab as keys, as a hardware
-        // keyboard sends them with shift held (ForwardedKeys.shiftedKeyUsages), since "\n" and "\t"
-        // as text carry no shift.
-        if latchedModifiers.contains(.shift), text == "\n" || text == "\t",
+        // The key row's shift latched, then a return, tab or space from the text system (the
+        // software keyboard's, or a hardware one's without shift): ⇧Return, ⇧Tab and ⇧Space as keys,
+        // as a hardware keyboard sends them with shift held (ForwardedKeys.shiftedKeyUsages), since
+        // "\n", "\t" and " " as text carry no shift.
+        if latchedModifiers.contains(.shift), text == "\n" || text == "\t" || text == " ",
            let character = text.first, let usage = HIDKey.usage(for: character),
            ForwardedKeys.shiftedKeyUsages.contains(usage) {
             sendLatched(usage)
@@ -718,7 +718,7 @@ final class InputOverlayView: UIView, UIKeyInput, UIGestureRecognizerDelegate {
     // The split between the two keyboard paths, which must not overlap or everything is typed twice:
     //
     //   • Text path (`insertText` / `deleteBackward`) owns every key that produces characters:
-    //     letters, digits, punctuation, space and backspace, with or without shift, and return and
+    //     letters, digits, punctuation and backspace, with or without shift, and space, return and
     //     tab without it. Those arrive already composed — shifted, dead-keyed, from a Japanese IME,
     //     from dictation — which is exactly what we want to send as `.text`.
     //
@@ -726,7 +726,8 @@ final class InputOverlayView: UIView, UIKeyInput, UIGestureRecognizerDelegate {
     //     function keys, home/end/page up/down, forward delete, ⌘, ⌃ and ⌥ themselves, *any* key
     //     while command, control or option is held, because those combinations are shortcuts (⌘S,
     //     ⌃A, ⌥←) and never reach `insertText`, and return and tab with shift, which the text path
-    //     would hand over as a bare "\n" and "\t" (⇧Return a plain Return on the Mac). Shift alone
+    //     would hand over as a bare "\n" and "\t" (⇧Return a plain Return on the Mac), and space with
+    //     it likewise (⇧Space a plain Space). Shift alone
     //     is not otherwise in that list: shift makes characters. (ForwardedKeys.goesAsKey.)
     //
     // Which path a key takes is decided when it goes down, and its up takes the same one whatever the

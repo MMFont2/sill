@@ -121,10 +121,11 @@ struct ForwardedKeys {
         0xE0, 0xE2, 0xE3, 0xE4, 0xE6, 0xE7,                                       // control, option, command, left and right
     ]
 
-    /// Return and tab: with shift held they go as keys too. The text system hands them over as
-    /// "\n" and "\t" with the shift gone, and the Mac then typed a plain Return (sending a chat
-    /// message where ⇧Return means a new line) and a plain Tab (moving focus forward, not back).
-    static let shiftedKeyUsages: Set<UInt16> = [0x28, 0x2B]
+    /// Return, tab and space: with shift held they go as keys too. The text system hands them over
+    /// as "\n", "\t" and " " with the shift gone, and the Mac then typed a plain Return (sending a
+    /// chat message where ⇧Return means a new line), a plain Tab (moving focus forward, not back)
+    /// and a plain Space (play where ⇧Space is an app's own shortcut, DaVinci Resolve's among them).
+    static let shiftedKeyUsages: Set<UInt16> = [0x28, 0x2B, 0x2C]
 
     /// Whether a key pressed with these modifiers goes to the Mac as a key rather than to the text
     /// system: one of `keyUsages`, return or tab with shift held (`shiftedKeyUsages`), or any key

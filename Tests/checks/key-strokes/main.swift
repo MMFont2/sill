@@ -1187,13 +1187,17 @@ struct Keyboard {
 }
 
 // Which keys go to the Mac as keys: the ones the text system never delivers, ⌘, ⌃ and ⌥ themselves,
-// any key while ⌘, ⌃ or ⌥ is held, and return and tab with shift (their "\n" and "\t" carry none);
+// any key while ⌘, ⌃ or ⌥ is held, and return, tab and space with shift (their "\n", "\t" and " "
+// carry none);
 // shift alone otherwise makes characters.
 check([uLeft, uRight, 0x51, 0x52, uEsc, 0x4C, 0x4A, 0x4D, 0x4B, 0x4E, 0x3A, 0x45, uLCmd, uRCmd, uLCtrl, uRCtrl, uLOpt, uROpt]
         .allSatisfy { ForwardedKeys.goesAsKey($0, modifiers: 0) },
       "arrows, escape, forward delete, home, end, page up and down, F1 and F12, ⌘, ⌃, ⌥: as keys")
-check(![uS, uSpace, 0x2A, uLShift, uRShift, 0x39].contains { ForwardedKeys.goesAsKey($0, modifiers: shift | capsLock) },
-      "letters, space, delete, shift and caps lock with shift: to the text system")
+check(![uS, 0x2A, uLShift, uRShift, 0x39].contains { ForwardedKeys.goesAsKey($0, modifiers: shift | capsLock) },
+      "letters, delete, shift and caps lock with shift: to the text system")
+check(ForwardedKeys.goesAsKey(uSpace, modifiers: shift) && !ForwardedKeys.goesAsKey(uSpace, modifiers: 0)
+        && !ForwardedKeys.goesAsKey(uSpace, modifiers: capsLock),
+      "space with shift: as a key (⇧Space, an app's shortcut); alone or with caps lock: to the text system")
 check([uReturn, 0x2B].allSatisfy { ForwardedKeys.goesAsKey($0, modifiers: shift) && ForwardedKeys.goesAsKey($0, modifiers: shift | capsLock) },
       "return and tab with shift: as keys (the text system's \\n and \\t carry no shift)")
 check(![uReturn, 0x2B].contains { ForwardedKeys.goesAsKey($0, modifiers: 0) || ForwardedKeys.goesAsKey($0, modifiers: capsLock) },
